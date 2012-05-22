@@ -48,6 +48,30 @@ Vector QuarticFunction::g(const Vector &v) const{
   return d;
 }
 
+//!!!! have not debugged
+// do not use yet
+Vector QuarticFunction::gg(const Vector &v) const{
+  Vector d(v.size(),0.0);
+  Real x, c, sum;
+  int a;
+
+  FOR(i, v.size()) {
+    sum = 0;
+    FOR(j, to[net.arcs[i].tail].size()){
+      a = to[net.arcs[i].tail][j];
+      x = v[a]; c = net.arcs[a].cap;
+      d[a] += 240*x*x/(c*c*c*c);
+    }
+
+    x = v[i]; c = net.arcs[i].cap;
+    d[i] += 200/(c*c);
+
+    c = Real(net.arcs[i].head+1.0)/Real(net.arcs[i].tail+1.0);
+    d[i] += c;
+  }
+  return d;
+}
+
 BPRFunction::BPRFunction(const MultiCommoNetwork &n, Real a, Real b): 
   net(n), alpha(a), beta(b) {}
 
@@ -74,6 +98,21 @@ Vector BPRFunction::g(const Vector &x) const {
     ya = 0.0; ca = net.arcs[a].cap; ta = net.arcs[a].cost;
     FOR(i, K) ya += x[a*K + i];
     dd = ta + ta*alpha*pow(ya/ca,beta);
+    FOR(i,K) d[a*K + i] = dd;
+  }
+  return d;
+}
+
+Vector BPRFunction::gg(const Vector &x) const {
+  int K = net.commoflows.size(), A = net.arcs.size();
+  assert(K*A == x.size()); // debug
+  Vector d(K*A);
+  Real ya, ca, dd, ta;
+  FOR(a, A){
+    ya = 0.0; ca = net.arcs[a].cap; ta = net.arcs[a].cost;
+    FOR(i, K) ya += x[a*K + i];
+    assert(ca>0.0);
+    dd = ta*alpha*beta*pow(ya/ca,beta-1)/ca;
     FOR(i,K) d[a*K + i] = dd;
   }
   return d;
@@ -108,6 +147,7 @@ void golden_search_recursive (Vector &x1, Vector &x2,
   }
   
   if(count == 0) return;
+  //  if(fabs(b2-b1) < 1e-3*0.5*(fabs(b2)+fabs(b1))) return;
   golden_search_recursive (x2,x1,f2,f1,fm,b2,b1,bm,obj,count-1);
 }
 

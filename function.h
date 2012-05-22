@@ -3,6 +3,8 @@
 
 #include "network.h"
 
+#define PHI 0.6180339887498948482045868343656
+
 using namespace std;
 
 // Prototype of a differientiable function
@@ -13,6 +15,9 @@ public:
 
   // return gradient of the function at point x
   virtual Vector g(const Vector &x) const = 0;
+
+  // Diagonal of Hessian matrix
+  virtual Vector gg(const Vector &x) const = 0;
 
   // destructor
   virtual ~Function() {} ;
@@ -30,6 +35,7 @@ public:
   QuarticFunction(const Network &n);
   virtual Real f(const Vector &v) const;
   virtual Vector g(const Vector &v) const;
+  virtual Vector gg(const Vector &v) const;
 };
 
 // BPR Function on a multi-commodity network
@@ -41,6 +47,7 @@ private:
 public:
   virtual Real f(const Vector &x) const;
   virtual Vector g(const Vector &x) const;
+  virtual Vector gg(const Vector &x) const;
   BPRFunction(const MultiCommoNetwork &n, Real a=0.15, Real b=4);
 };
 

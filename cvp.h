@@ -38,6 +38,7 @@ class CVP{
   Real initial_beta;
   Real beta_up_factor;
   Real beta_down_factor;
+  Real tau_multiplier;
   bool to_reset_beta;
   bool to_golden_search;
   bool to_line_search;

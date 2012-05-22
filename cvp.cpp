@@ -44,6 +44,7 @@ void CVP::default_settings(){
   beta_up_factor = 1.1;
   initial_beta = 10.0;
   beta_down_factor = 0.5;
+  tau_multiplier = 4.0;
   to_reset_beta = false;
   to_line_search = true;
   to_golden_search = true;
@@ -257,7 +258,7 @@ Vector CVP::phase1(Vector *init){
 }
 
 Vector CVP::phase2(Vector *init){
-  Real beta = initial_beta;
+  Real beta;
   int count = 0, iteration = 0;
   Timer timer;
   Real tic1, tic2, tic3;
@@ -266,30 +267,15 @@ Vector CVP::phase2(Vector *init){
   tic1 = timer.elapsed();
 
   // Initialisation by solving initial proxy objective
-  Vector x0 = solve(this->initial_proxy_obj());
-  Real f0 = obj->f(x0); 
+  Vector x0, x1 = solve(this->initial_proxy_obj());
+  Real f0, f1 = obj->f(x1); 
 
   // Timing and Reporting
   tic2 = timer.elapsed();
-  iteration_report<<"Initialisation: time = "<<tic2-tic1<<"s; obj = "<<f0<<endl;
+  iteration_report<<"Initialisation: time = "<<tic2-tic1<<"s; obj = "<<f1<<endl;
   tic1 = timer.elapsed();
 
-  // Initial exploration
-  Vector g = obj->g(x0);
-  Vector z = g; z *= (-beta); z += x0; // z = x0 - beta*g
-  Vector x1 = solve(quad_proxy_obj(z));
-  Real f1 = obj->f(x1);
-
-  while(x1 == z){
-    beta *= beta_up_factor;
-    z = g; z *= (-beta); z += x0;    
-    f1 = obj->f(x1 = solve(quad_proxy_obj(z)));
-  }
-
-  // Timing and reporting
-  tic2 = timer.elapsed();
-  iteration_report<<"Initial exploration: time = "<<tic2-tic1<<"s; beta = "<<beta<<"; obj = "<<f1<<endl;
-  iteration_report<<endl;
+  beta = initial_beta * sqrt(x0*x0); // added by Hieu
 
   // header row of the iteration report
   FOR(i,71) iteration_report<<"-"; iteration_report<<endl;
@@ -300,10 +286,12 @@ Vector CVP::phase2(Vector *init){
 		   << right << setw(6)  << "ls?"
 		   << right << setw(8) << "time_ls"
 		   << right << setw(8) << "lambda*"
+		   << right << setw(10) << "cosine"
 		   << right << setw(17) << "obj"<<endl;
   FOR(i,71) iteration_report<<"-"; iteration_report<<endl;
   
   // Loops
+  Vector g, z;
   while(!exit_flag) {
     if(to_reset_beta) beta = initial_beta;
 
@@ -316,8 +304,10 @@ Vector CVP::phase2(Vector *init){
     
     // Reduce beta and do projection until improvement
     g = obj->g(x0);
+    Real normg = sqrt(g*g); // added by Hieu
+
     for(;;) {
-      z = g; z *= (-beta); z += x0; // z = x0 - beta*g
+      z = g; z *= (-beta)/normg; z += x0; // z = x0 - beta*g
       x1 = solve(quad_proxy_obj(z));
       f1 = obj->f(x1);
       count++; // counting number of solves (for reporting purpose)
@@ -325,10 +315,13 @@ Vector CVP::phase2(Vector *init){
       beta *= beta_down_factor;
     }
 
+    Real normdx_before_ls = sqrt((x1-x0)*(x1-x0)); // added by Hieu
+
     // Optimality check
     g = obj->g(x1); // g is now gradient at x1
     z -= x1; // z is now z - x1
-    exit_flag = 1 + (z*g)/sqrt((z*z)*(g*g)) <= optimality_epsilon;
+    Real cosine = 1 + (z*g)/sqrt((z*z)*(g*g)); //added by Hieu
+    exit_flag = cosine <= optimality_epsilon;
     
     tic2 = timer.elapsed();
 
@@ -341,6 +334,8 @@ Vector CVP::phase2(Vector *init){
       x1 -= x0; x1 *= lambda; x1 += x0; // x1 = x0 + betamin*(x1-x0)
       f1 = obj->f(x1);
     }
+
+    Real normdx_after_ls = sqrt((x1-x0)*(x1-x0)); // added by Hieu
     
     // Timing and Reporting
     tic3 = timer.elapsed();
@@ -351,6 +346,7 @@ Vector CVP::phase2(Vector *init){
 		     << right << setw(6) << (do_line_search ? "YES":"NO")
 		     << right << setw(8) << setprecision(4) << fixed << tic3-tic2
 		     << right << setw(8) << setprecision(3) << fixed << lambda
+		     << right << setw(10) << setprecision(5) << scientific << cosine
 		     << right << setw(17) << setprecision(8) << scientific << f1 << endl;
   }
   
@@ -692,7 +688,7 @@ Vector CVP_MCNF::solve_by_dijkstra(){
 }
 
 Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
-  Real beta = initial_beta;
+  Real beta;
   int count = 0, iteration = 0;
   Timer timer;
   Real tic1, tic2, tic3, tic4, start = timer.elapsed();
@@ -708,7 +704,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   vector< vertex_t * > trace(V);
   vector< char * > vb(V);
   vector< int > nv(V, 0);
-  int output_row_width = 97;
+  int output_row_width = 117;
 
   adjl.V = V; adjl.A = A;
   malloc_adjl(&adjl);
@@ -749,56 +745,45 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   }
   FOR(i, V) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
   
-  Vector x0(A*K, 0.0);
+  Vector x0, x1(A*K, 0.0);
   FOR(k, K){
     int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
     Real demand = net.commoflows[k].demand;
     while(v>=0 && v!=u){
-      x0[indexarcl[trace[u][v]][v]*K + k] = demand;
+      x1[indexarcl[trace[u][v]][v]*K + k] = demand;
       v = trace[u][v];
     }
   }
-  Real f0 = obj->f(x0); 
+  Real f0, f1 = obj->f(x1); 
+  beta = initial_beta * sqrt(x1*x1);
 
   // Timing and Reporting
   tic2 = timer.elapsed();
-  iteration_report<<"Initialisation: time = "<<tic2-tic1<<"s; obj = "<<f0<<endl;
+  iteration_report<<"Initialisation: time = "<<tic2-tic1<<"s; obj = "<<f1<<endl;
   tic1 = timer.elapsed();
 
-  // Initial exploration
-  Vector g = obj->g(x0);
-  Vector z = g; z *= (-beta); z += x0; // z = x0 - beta*g
-  Vector x1 = solve(quad_proxy_obj(z));
-  Real f1 = obj->f(x1);
-
-  while(x1 == z){
-    beta *= beta_up_factor;
-    z = g; z *= (-beta); z += x0;    
-    f1 = obj->f(x1 = solve(quad_proxy_obj(z)));
-  }
-
-  // Timing and reporting
-  tic2 = timer.elapsed();
-  iteration_report<<"Initial exploration: time = "<<tic2-tic1<<"s; beta = "<<beta<<"; obj = "<<f1<<endl;
-  iteration_report<<endl;
-
   // header row of the iteration report
+  output_row_width = 130;
   FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
   iteration_report << left << setw(4)  << "Iter"
 		   << right << setw(7) << "#solve"
 		   << right << setw(8) << "t_total"
-		   << right << setw(7) << "beta"
+		   << right << setw(12) << "beta"
 		   << right << setw(5) << "ls?"
 		   << right << setw(8) << "lambda*"
-		   << right << setw(8) << "tau*"
+		   << right << setw(10) << "tau*0"
+		   << right << setw(10) << "tau*n"
 		   << right << setw(8) << "t_SP"
-		   << right << setw(15) << "obj_ls"
-		   << right << setw(15) << "obj_final"
+		   << right << setw(20) << "obj_ls"
+		   << right << setw(20) << "obj_final"
+		   << right << setw(10) << "cosine"
 		   << right << setw(12) << "t_elapsed"
 		   <<endl;
   FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
   
   // Loops
+  Vector g, z;
+  Real tau = 1.0, taustar = 1.0;;
   while(!exit_flag) {
     if(to_reset_beta) beta = initial_beta;
 
@@ -811,6 +796,12 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     
     // Reduce beta and do projection until improvement
     g = obj->g(x0);
+    Vector gg = obj->gg(x0);
+    FOR(i, g.size()) if(gg[i]>1e-6) g[i] /= gg[i]; else g[i] = 0.0;
+    Real normg = sqrt(g*g);
+    cout<<normg;
+    g *= (1/normg);
+
     for(;;) {
       z = g; z *= (-beta); z += x0; // z = x0 - beta*g
       x1 = solve(quad_proxy_obj(z));
@@ -823,7 +814,8 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     // Optimality check
     g = obj->g(x1); // g is now gradient at x1
     z -= x1; // z is now z - x1
-    exit_flag = 1 + (z*g)/sqrt((z*z)*(g*g)) <= optimality_epsilon;
+    Real cosine = 1 + (z*g)/sqrt((z*z)*(g*g));
+    exit_flag = cosine  <= optimality_epsilon; 
     
     tic2 = timer.elapsed();
 
@@ -839,9 +831,11 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     
     tic3 = timer.elapsed();
     
-    Real f_ls = f1, fsp, tau = 0.0;
+    Real f_ls = f1, fsp;
+    Real taustar0 = 0.0;
     FOR(iter, SP_iterations_per_SOCP) {
       g = obj->g(x1);
+
       FOR(a, A){  
         int u = net.arcs[a].head, v = net.arcs[a].tail;
         adjl.costs[indexadjl[u][v]] = g[indexarcl[u][v]*K];
@@ -862,12 +856,21 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
       Vector dx(sp); dx -= x1;
       Vector gsp = obj->g(sp);
       if((gsp*dx)*(g*dx)<0) {
-        tau = golden_search(x1, sp, obj, line_search_iterations);
-        x1 -= sp; x1 *= (1-tau); x1 += sp;
+	tau = taustar * 4;
+	if (tau >= 1.0) tau = 1.0;
+	else sp -= x1, sp *= tau, sp += x1; // sp = x1 + tau*(sp-x1)
+        taustar = golden_search(x1, sp, obj, line_search_iterations);
+        x1 -= sp; x1 *= (1-taustar); x1 += sp;
+	taustar *= tau;
         f1 = obj->f(x1);
       } 
-      else if( (fsp = obj->f(sp)) < f1 ) x1 = sp, f1 = fsp, tau = 1.0;
-      else break;
+      else if( (fsp = obj->f(sp)) < f1 ) x1 = sp, f1 = fsp, taustar = 1.0;
+      else {
+	taustar = 0.0;
+	break;
+      }
+
+      if(iter == 0) taustar0 = taustar;
     }
     
     // Timing and Reporting
@@ -875,15 +878,18 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     iteration_report << left << setw(4)  << iteration
 		     << right << setw(7)  << count
 		     << right << setw(8) << setprecision(3) << fixed << tic4-tic1
-		     << right << setw(7) << setprecision(3) << fixed << beta
+		     << right << setw(12) << setprecision(2) << fixed << beta
 		     << right << setw(5) << setprecision(3) << (do_line_search?"YES":"NO")
 		     << right << setw(8) << setprecision(5) << fixed << lambda
-		     << right << setw(8) << setprecision(5) << fixed << tau
+		     << right << setw(8) << setprecision(5) << fixed << taustar0
+		     << right << setw(8) << setprecision(5) << fixed << taustar
 		     << right << setw(8) << setprecision(3) << fixed << tic4 - tic3
-		     << right << setw(15) << setprecision(6) << scientific << f_ls
-		     << right << setw(15) << setprecision(6) << scientific << f1 
+		     << right << setw(20) << setprecision(10) << scientific << f_ls
+		     << right << setw(20) << setprecision(10) << scientific << f1 
+		     << right << setw(10) << setprecision(1) << scientific << cosine
 		     << right << setw(12) << setprecision(3) << fixed << timer.elapsed()-start
 		     << endl;
+    if(taustar == 0.0) taustar = 1.0;
   }
   
   // Reporting final results
