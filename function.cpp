@@ -132,36 +132,47 @@ void golden_search_recursive (Vector &x1, Vector &x2,
 			      Real f1, Real f2, Real &fm,
 			      Real b1, Real b2, Real &bm,
 			      Function *obj,
-			      int count) {
+			      int count,
+			      double ratio) 
+{
+  if(ratio == 0.5) return;
+  if(ration > 0.5) ratio = 1 - ratio;
+
   if (f1 > f2){
-    x1 -= x2; x1 *= (-PHI); x1 += x2;
+    x1 -= x2; x1 *= ( (3*ratio - 1)/(1 - 2*ratio) ); x1 += x2;
     f1 = obj->f(x1);
-    b1 = b2 + PHI*(b2-b1);
+    b1 = b1 + ratio/(1-2*ratio)*(b2-b1);
     if(f1<fm) fm=f1, bm=b1;
   } 
   else {
-    x2 -= x1; x2 *= (-PHI); x2 += x1;
+    x2 -= x1; x2 *= ( (3*ratio - 1)/(1 - 2*ratio) ); x2 += x1;
     f2 = obj->f(x2);
-    b2 = b1 + PHI*(b1-b2);
+    b2 = b2 + ratio/(1-2*ratio)*(b1-b2);
     if(f2<fm) fm=f2, bm=b2;
   }
   
   if(count == 0) return;
   //  if(fabs(b2-b1) < 1e-3*0.5*(fabs(b2)+fabs(b1))) return;
-  golden_search_recursive (x2,x1,f2,f1,fm,b2,b1,bm,obj,count-1);
+  golden_search_recursive (x2,x1,f2,f1,fm,b2,b1,bm,obj,count-1,ratio/(1-ratio));
 }
 
 // golden search between A and B
-double golden_search (const Vector &A, const Vector &B, Function *obj, int niteration){
+double golden_search ( const Vector &A, 
+		       const Vector &B, 
+		       Function *obj, 
+		       int niteration,
+		       double ratio)
+{
   Vector x1(A), x2(A);
+  if(ratio < 0.5) ratio = 1-ratio;
 
-  x1 -= B; x1*=PHI; x1+=B; // x1 = PHI*A + (1-PHI)*B = PHI*(A-B) - B;
+  x1 -= B; x1*=ratio; x1+=B; // x1 = PHI*A + (1-PHI)*B = PHI*(A-B) - B;
   x2 += B; x2 -= x1; // x2 = (1-PHI)*A + PHI*B = A + B - x1
 
-  Real f1 = obj->f(x1), f2 = obj->f(x2), b1 = 1-PHI, b2 = PHI;
+  Real f1 = obj->f(x1), f2 = obj->f(x2), b1 = 1-ratio, b2 = ratio;
   Real fm = f1, bm = b1;
 
-  golden_search_recursive (x1,x2,f1,f2,fm,b1,b2,bm,obj,niteration);
+  golden_search_recursive (x1,x2,f1,f2,fm,b1,b2,bm,obj,niteration,1-ratio);
   return bm;
 }
 

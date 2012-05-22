@@ -51,7 +51,12 @@ public:
   BPRFunction(const MultiCommoNetwork &n, Real a=0.15, Real b=4);
 };
 
-double golden_search (const Vector &x0, const Vector &x1, Function *obj, int niteration = 20);
+double golden_search ( const Vector &x0, 
+		       const Vector &x1, 
+		       Function *obj, 
+		       int niteration = 20
+		       double ration = PHI);
+
 double line_search (const Vector &x0, const Vector &x1, Function *obj, int niteration = 20);
 
 #endif
