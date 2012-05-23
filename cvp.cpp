@@ -859,7 +859,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
       if (taustar <=0) taubound = 1;
       else taubound = taustar * 4, sp -= x1, sp *= taubound, sp += x1, dx *= taubound;
       
-      for(;;) {
+      FOR(i, 20) {
 	gsp = obj->g(sp);
 	if((gsp*dx)*gxdx<0) break;
 	taubound *= 2;

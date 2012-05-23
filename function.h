@@ -49,6 +49,9 @@ public:
   virtual Vector g(const Vector &x) const;
   virtual Vector gg(const Vector &x) const;
   BPRFunction(const MultiCommoNetwork &n, Real a=0.15, Real b=4);
+  MultiCommoNetwork getNetwork() const{
+    return net;
+  }
 };
 
 class ReducedBPRFunction: public Function{

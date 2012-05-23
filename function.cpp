@@ -212,6 +212,24 @@ double golden_search ( const Vector &A,
 		       int niteration,
 		       double ratio)
 {
+  
+  BPRFunction *bpr = dynamic_cast<BPRFunction*> (obj);
+  if(bpr != NULL && dynamic_cast<ReducedBPRFunction*> (obj) == NULL){
+    MultiCommoNetwork net = bpr->getNetwork();
+    ReducedBPRFunction rbpr(net);
+    int nA = net.arcs.size(), nK = net.commoflows.size();
+    Vector AA(nA), BB(nA);
+    FOR(a, nA){
+      AA[a] = BB[a] = 0.0;
+      FOR(k, nK) AA[a] += A[a*nK + k], BB[a] += B[a*nK + k];
+    }
+    //cout<<setprecision(20)<<obj->f(A)<<" "<<setprecision(20)<<rbpr.f(AA)<<endl;
+    assert(fabs(obj->f(A)-rbpr.f(AA))<1e-2);
+    assert(fabs(obj->f(B)-rbpr.f(BB))<1e-2);
+    return golden_search(AA, BB, &rbpr, niteration, ratio);
+  }
+  
+
   Vector x1(A), x2(A);
   if(ratio < 0.5) ratio = 1-ratio;
 
