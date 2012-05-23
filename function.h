@@ -23,6 +23,12 @@ public:
   virtual ~Function() {} ;
 };
 
+class ReducableFunction : public Function {
+ public:
+  virtual Function* reduced_function() const = 0;
+  virtual Vector reduced_variable(const Vector &) const = 0;
+};
+
 // quartic function with delay propagation
 class QuarticFunction : public Function{
 private:
@@ -39,7 +45,7 @@ public:
 };
 
 // BPR Function on a multi-commodity network
-class BPRFunction: public Function{
+class BPRFunction: public ReducableFunction {
 private:
   MultiCommoNetwork net;
   Real alpha, beta;
@@ -52,9 +58,12 @@ public:
   MultiCommoNetwork getNetwork() const{
     return net;
   }
+
+  virtual Function* reduced_function() const;
+  virtual Vector reduced_variable(const Vector &) const;
 };
 
-class ReducedBPRFunction: public Function{
+class ReducedBPRFunction: public Function {
  private:
   MultiCommoNetwork net;
   Real alpha, beta;
@@ -66,7 +75,7 @@ class ReducedBPRFunction: public Function{
   ReducedBPRFunction(const MultiCommoNetwork &n, const Real a=0.15, Real b=4);
 };
 
-class KleinrockFunction : public Function {
+class KleinrockFunction : public ReducableFunction {
  private:
   MultiCommoNetwork net;
 
@@ -75,6 +84,21 @@ class KleinrockFunction : public Function {
   virtual Vector g(const Vector &x) const;
   virtual Vector gg(const Vector &x) const;
   KleinrockFunction(const MultiCommoNetwork &n);  
+
+  virtual Function* reduced_function() const;
+  virtual Vector reduced_variable(const Vector &) const;
+};
+
+
+class ReducedKleinrockFunction : public Function {
+ private:
+  MultiCommoNetwork net;
+
+ public:
+  virtual Real f(const Vector &x) const;
+  virtual Vector g(const Vector &x) const;
+  virtual Vector gg(const Vector &x) const;
+  ReducedKleinrockFunction(const MultiCommoNetwork &n);  
 };
 
 double golden_search ( const Vector &x0, 

@@ -89,6 +89,18 @@ Real BPRFunction::f(const Vector &x) const {
   return sum;
 }
 
+Function* BPRFunction::reduced_function() const {
+  return new ReducedBPRFunction(net);
+}
+
+Vector BPRFunction::reduced_variable(const Vector &x) const {
+  int K = net.commoflows.size(), A = net.arcs.size();
+  assert(K*A == x.size());
+  Vector reduced_x (A, 0.0);
+  FOR(a, A) FOR(k, K) reduced_x[a] += x[a*K + k];
+  return reduced_x;
+}
+
 Vector BPRFunction::g(const Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
@@ -187,6 +199,18 @@ Vector KleinrockFunction::g(const Vector &x) const{
   return d;
 }
 
+Function* KleinrockFunction::reduced_function() const {
+  return new ReducedKleinrockFunction(net);
+}
+
+Vector KleinrockFunction::reduced_variable(const Vector &x) const {
+  int K = net.commoflows.size(), A = net.arcs.size();
+  assert(K*A == x.size());
+  Vector reduced_x (A, 0.0);
+  FOR(a, A) FOR(k, K) reduced_x[a] += x[a*K + k];
+  return reduced_x;
+}
+
 Vector KleinrockFunction::gg(const Vector &x) const{
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
@@ -203,6 +227,50 @@ Vector KleinrockFunction::gg(const Vector &x) const{
 }
 
 KleinrockFunction::KleinrockFunction(const MultiCommoNetwork &n) : net(n){
+}
+
+
+Real ReducedKleinrockFunction::f(const Vector &x) const {
+  int A = net.arcs.size();
+  assert(A == x.size()); // debug
+  Real sum = 0.0, ya, ca;
+  FOR(a, A){
+    ya = x[a];
+    ca = net.arcs[a].cap;
+    sum += ya/(ca-ya);
+  }
+  return sum;
+}
+
+Vector ReducedKleinrockFunction::g(const Vector &x) const{
+  int A = net.arcs.size();
+  assert(A == x.size()); // debug
+  Vector d(A);
+  Real ya, ca, dd;
+  FOR(a, A){
+    ya = x[a]; ca = net.arcs[a].cap;
+    dd = ca - ya;
+    dd = ca/(dd*dd);
+    d[a] = dd;
+  }
+  return d;
+}
+
+Vector ReducedKleinrockFunction::gg(const Vector &x) const{
+  int A = net.arcs.size();
+  assert(A == x.size()); // debug
+  Vector d(A);
+  Real ya, ca, dd;
+  FOR(a, A){
+    ya = x[a]; ca = net.arcs[a].cap;
+    dd = ca - ya;
+    dd = 2*ca/(dd*dd*dd);
+    d[a] = dd;
+  }
+  return d;
+}
+
+ReducedKleinrockFunction::ReducedKleinrockFunction(const MultiCommoNetwork &n) : net(n){
 }
 
 
@@ -259,24 +327,21 @@ double golden_search ( const Vector &A,
 		       int niteration,
 		       double ratio)
 {
-  
-  BPRFunction *bpr = dynamic_cast<BPRFunction*> (obj);
-  if(bpr != NULL && dynamic_cast<ReducedBPRFunction*> (obj) == NULL){
-    MultiCommoNetwork net = bpr->getNetwork();
-    ReducedBPRFunction rbpr(net);
-    int nA = net.arcs.size(), nK = net.commoflows.size();
-    Vector AA(nA), BB(nA);
-    FOR(a, nA){
-      AA[a] = BB[a] = 0.0;
-      FOR(k, nK) AA[a] += A[a*nK + k], BB[a] += B[a*nK + k];
-    }
-    //cout<<setprecision(20)<<obj->f(A)<<" "<<setprecision(20)<<rbpr.f(AA)<<endl;
-    assert(fabs(obj->f(A)-rbpr.f(AA))<1e-2);
-    assert(fabs(obj->f(B)-rbpr.f(BB))<1e-2);
-    return golden_search(AA, BB, &rbpr, niteration, ratio);
+  // Check whether the function can be reduced (a reducable function)
+  // by casting it to ReducableFunction class
+  ReducableFunction *casted_obj = dynamic_cast<ReducableFunction*> (obj);
+  if(casted_obj != NULL){
+    // If it can be casted --> it is a reducable function
+    // then do the search with the reduced function and variables instead
+    Function* reduced_obj = casted_obj->reduced_function();
+    Real lambda = golden_search( casted_obj->reduced_variable(A), 
+				 casted_obj->reduced_variable(B), 
+				 reduced_obj,
+				 niteration, ratio);
+    delete reduced_obj;
+    return lambda;
   }
   
-
   Vector x1(A), x2(A);
   if(ratio < 0.5) ratio = 1-ratio;
 
