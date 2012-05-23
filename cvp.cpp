@@ -834,44 +834,57 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     Real f_ls = f1, fsp;
     Real taustar0 = 0.0;
     FOR(iter, SP_iterations_per_SOCP) {
+      double tick_gs_start = timer.elapsed(), tick_gs_end;
       g = obj->g(x1);
+      //iteration_report<<"1: "<<timer.elapsed() - tick_gs_start<<endl;
 
       FOR(a, A){  
         int u = net.arcs[a].head, v = net.arcs[a].tail;
         adjl.costs[indexadjl[u][v]] = cost_t(g[indexarcl[u][v]*K]);
       }
+      //iteration_report<<"2: "<<timer.elapsed() - tick_gs_start<<endl;
         
       FOR(i, V) if(nv[i]>0) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
+      //iteration_report<<"3: "<<timer.elapsed() - tick_gs_start<<endl;
       
       Vector sp(x1.size(), 0);
       FOR(k, K){
         int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
         Real demand = net.commoflows[k].demand;
         while(v>=0 && v!=u) {
-	        sp[ indexarcl [trace[u][v]] [v] * K + k] = demand;
-	        v = trace[u][v];
+	  sp[ indexarcl [trace[u][v]] [v] * K + k] = demand;
+	  v = trace[u][v];
         }
       }
-        
-      Vector gsp, dx(sp); dx -= x1;
-      Real gxdx = (dx*g);
+      //iteration_report<<"4: "<<timer.elapsed() - tick_gs_start<<endl;
+
+      //Vector gsp, dx(sp); dx -= x1;
+      //Real gxdx = (dx*g);
 
       if (taustar <=0) taubound = 1;
-      else taubound = taustar * 4, sp -= x1, sp *= taubound, sp += x1, dx *= taubound;
+      else taubound = taustar * 4, sp -= x1, sp *= taubound, sp += x1;// dx *= taubound;
       
+      int ii = 0;
+      /*
       FOR(i, 20) {
 	gsp = obj->g(sp);
+	ii ++;
 	if((gsp*dx)*gxdx<0) break;
 	taubound *= 2;
 	sp += dx;
 	dx *= 2.0;
       }
+      */
+      //iteration_report<<"5: "<<ii<<" "<<timer.elapsed() - tick_gs_start<<endl;
 
       taustar = golden_search(x1, sp, obj, line_search_iterations);
+      //iteration_report<<"6: "<<timer.elapsed() - tick_gs_start<<endl;
+
       x1 -= sp; x1 *= (1-taustar); x1 += sp;
       taustar *= taubound;
       f1 = obj->f(x1);
 
+      //iteration_report<<"7: "<<timer.elapsed() - tick_gs_start<<endl;
       if(iter == 0) taustar0 = taustar;
     }
     

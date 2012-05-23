@@ -55,15 +55,27 @@ public:
 };
 
 class ReducedBPRFunction: public Function{
-private:
+ private:
   MultiCommoNetwork net;
   Real alpha, beta;
 
-public:
+ public:
   virtual Real f(const Vector &x) const;
   virtual Vector g(const Vector &x) const;
   virtual Vector gg(const Vector &x) const;
   ReducedBPRFunction(const MultiCommoNetwork &n, const Real a=0.15, Real b=4);
+};
+
+class KleinrockFunction : public Function {
+ private:
+  MultiCommoNetwork net;
+  Real alpha, beta;
+
+ public:
+  virtual Real f(const Vector &x) const;
+  virtual Vector g(const Vector &x) const;
+  virtual Vector gg(const Vector &x) const;
+  KleinrockFunction(const MultiCommoNetwork &n, const Real a=0.15, Real b=4);  
 };
 
 double golden_search ( const Vector &x0, 
