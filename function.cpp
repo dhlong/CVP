@@ -118,6 +118,47 @@ Vector BPRFunction::gg(const Vector &x) const {
   return d;
 }
 
+ReducedBPRFunction::ReducedBPRFunction(const MultiCommoNetwork &n, Real a, Real b): 
+  net(n), alpha(a), beta(b) {}
+
+Real ReducedBPRFunction::f(const Vector &x) const {
+  int A = net.arcs.size();
+  assert(A == x.size()); // debug
+  Real sum = 0.0, ya, ca, ta;
+  FOR(a, A){
+    ya = x[a];
+    ca = net.arcs[a].cap;
+    ta = net.arcs[a].cost;
+    sum += ta*ya*(1 + alpha/(beta+1)*pow(ya/ca,beta));
+  }
+  return sum;
+}
+
+Vector ReducedBPRFunction::g(const Vector &x) const {
+  int A = net.arcs.size();
+  assert(A == x.size()); // debug
+  Vector d(A);
+  Real ya, ca, ta;
+  FOR(a, A){
+    ya = x[a]; ca = net.arcs[a].cap; ta = net.arcs[a].cost;
+    d[a] = ta + ta*alpha*pow(ya/ca,beta);
+  }
+  return d;
+}
+
+Vector ReducedBPRFunction::gg(const Vector &x) const {
+  int A = net.arcs.size();
+  assert(A == x.size()); // debug
+  Vector d(A);
+  Real ya, ca, ta;
+  FOR(a, A){
+    ya = x[a]; ca = net.arcs[a].cap; ta = net.arcs[a].cost;
+    assert(ca>0.0);
+    d[a] = ta*alpha*beta*pow(ya/ca,beta-1)/ca;
+  }
+  return d;
+}
+
 #define PHI 0.6180339887498948482045868343656
 
 //
@@ -135,17 +176,25 @@ void golden_search_recursive (Vector &x1, Vector &x2,
 			      int count,
 			      double ratio) 
 {
-  if(ratio == 0.5) return;
-  if(ration > 0.5) ratio = 1 - ratio;
-
-  if (f1 > f2){
-    x1 -= x2; x1 *= ( (3*ratio - 1)/(1 - 2*ratio) ); x1 += x2;
+  if(ratio > 0.5) ratio = 1 - ratio;
+  if(fabs(3*ratio - 1) < 1e-6) {
+    Vector dx(x2); dx -= x1;
+    Real dphi = (1-2*ratio)*((1-PHI)-ratio);
+    Real db = dphi*(b2-b1);
+    dx *= dphi;
+    x1 += dx; x2 -= dx;
+    b1 += db; b2 -= db;
+    f1 = obj->f(x1); f2 = obj->f(x2);
+    ratio += dphi/(1-2*ratio);
+  }
+  if (f1 > f2) {
+    x1 -= x2; x1 *= ( (1 - 3*ratio)/(1 - 2*ratio) ); x1 += x2;
     f1 = obj->f(x1);
     b1 = b1 + ratio/(1-2*ratio)*(b2-b1);
     if(f1<fm) fm=f1, bm=b1;
   } 
   else {
-    x2 -= x1; x2 *= ( (3*ratio - 1)/(1 - 2*ratio) ); x2 += x1;
+    x2 -= x1; x2 *= ( (1 - 3*ratio)/(1 - 2*ratio) ); x2 += x1;
     f2 = obj->f(x2);
     b2 = b2 + ratio/(1-2*ratio)*(b1-b2);
     if(f2<fm) fm=f2, bm=b2;

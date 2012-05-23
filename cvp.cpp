@@ -594,7 +594,7 @@ Vector CVP_MCNF::solve_by_dijkstra(){
   // Initialisation by solving the intial network shortest paths
   FOR(a, A){
     NetworkArc arc = net.arcs[a];
-    adjl.costs[indexadjl[arc.head][arc.tail]] = arc.cost;
+    adjl.costs[indexadjl[arc.head][arc.tail]] = cost_t(arc.cost);
   }
   FOR(i, V) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
   
@@ -629,7 +629,7 @@ Vector CVP_MCNF::solve_by_dijkstra(){
     Vector g = obj->g(x);
     FOR(a, A){
       int u = net.arcs[a].head, v = net.arcs[a].tail;
-      adjl.costs[indexadjl[u][v]] = g[indexarcl[u][v]*K];
+      adjl.costs[indexadjl[u][v]] = cost_t(g[indexarcl[u][v]*K]);
     }
       
     FOR(i, V) if(nv[i]>0) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
@@ -741,7 +741,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   // Initialisation by solving the intial network shortest paths
   FOR(a, A){
     NetworkArc arc = net.arcs[a];
-    adjl.costs[indexadjl[arc.head][arc.tail]] = arc.cost;
+    adjl.costs[indexadjl[arc.head][arc.tail]] = cost_t(arc.cost);
   }
   FOR(i, V) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
   
@@ -771,8 +771,8 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 		   << right << setw(12) << "beta"
 		   << right << setw(5) << "ls?"
 		   << right << setw(8) << "lambda*"
-		   << right << setw(10) << "tau*0"
-		   << right << setw(10) << "tau*n"
+		   << right << setw(8) << "tau*0"
+		   << right << setw(8) << "tau*n"
 		   << right << setw(8) << "t_SP"
 		   << right << setw(20) << "obj_ls"
 		   << right << setw(20) << "obj_final"
@@ -783,7 +783,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   
   // Loops
   Vector g, z;
-  Real tau = 1.0, taustar = 1.0;;
+  Real taubound = -1, taustar = 0.5/2;
   while(!exit_flag) {
     if(to_reset_beta) beta = initial_beta;
 
@@ -796,8 +796,8 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     
     // Reduce beta and do projection until improvement
     g = obj->g(x0);
-    Vector gg = obj->gg(x0);
-    FOR(i, g.size()) if(gg[i]>1e-6) g[i] /= gg[i]; else g[i] = 0.0;
+    //Vector gg = obj->gg(x0);
+    //FOR(i, g.size()) if(gg[i]>1e-6) g[i] /= gg[i]; else g[i] = 0.0;
     Real normg = sqrt(g*g);
     cout<<normg;
     g *= (1/normg);
@@ -838,7 +838,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 
       FOR(a, A){  
         int u = net.arcs[a].head, v = net.arcs[a].tail;
-        adjl.costs[indexadjl[u][v]] = g[indexarcl[u][v]*K];
+        adjl.costs[indexadjl[u][v]] = cost_t(g[indexarcl[u][v]*K]);
       }
         
       FOR(i, V) if(nv[i]>0) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
@@ -853,22 +853,24 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
         }
       }
         
-      Vector dx(sp); dx -= x1;
-      Vector gsp = obj->g(sp);
-      if((gsp*dx)*(g*dx)<0) {
-	tau = taustar * 4;
-	if (tau >= 1.0) tau = 1.0;
-	else sp -= x1, sp *= tau, sp += x1; // sp = x1 + tau*(sp-x1)
-        taustar = golden_search(x1, sp, obj, line_search_iterations);
-        x1 -= sp; x1 *= (1-taustar); x1 += sp;
-	taustar *= tau;
-        f1 = obj->f(x1);
-      } 
-      else if( (fsp = obj->f(sp)) < f1 ) x1 = sp, f1 = fsp, taustar = 1.0;
-      else {
-	taustar = 0.0;
-	break;
+      Vector gsp, dx(sp); dx -= x1;
+      Real gxdx = (dx*g);
+
+      if (taustar <=0) taubound = 1;
+      else taubound = taustar * 4, sp -= x1, sp *= taubound, sp += x1, dx *= taubound;
+      
+      for(;;) {
+	gsp = obj->g(sp);
+	if((gsp*dx)*gxdx<0) break;
+	taubound *= 2;
+	sp += dx;
+	dx *= 2.0;
       }
+
+      taustar = golden_search(x1, sp, obj, line_search_iterations);
+      x1 -= sp; x1 *= (1-taustar); x1 += sp;
+      taustar *= taubound;
+      f1 = obj->f(x1);
 
       if(iter == 0) taustar0 = taustar;
     }

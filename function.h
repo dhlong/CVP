@@ -51,12 +51,24 @@ public:
   BPRFunction(const MultiCommoNetwork &n, Real a=0.15, Real b=4);
 };
 
+class ReducedBPRFunction: public Function{
+private:
+  MultiCommoNetwork net;
+  Real alpha, beta;
+
+public:
+  virtual Real f(const Vector &x) const;
+  virtual Vector g(const Vector &x) const;
+  virtual Vector gg(const Vector &x) const;
+  ReducedBPRFunction(const MultiCommoNetwork &n, const Real a=0.15, Real b=4);
+};
+
 double golden_search ( const Vector &x0, 
 		       const Vector &x1, 
 		       Function *obj, 
-		       int niteration = 20
-		       double ration = PHI);
-
+		       int niteration = 20,
+		       double ratio = PHI);
+		       
 double line_search (const Vector &x0, const Vector &x1, Function *obj, int niteration = 20);
 
 #endif
