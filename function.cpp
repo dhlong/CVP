@@ -159,6 +159,53 @@ Vector ReducedBPRFunction::gg(const Vector &x) const {
   return d;
 }
 
+Real KleinrockFunction::f(const Vector &x) const{
+  int K = net.commoflows.size(), A = net.arcs.size();
+  assert(K*A == x.size()); // debug
+  Real sum = 0.0, ya, ca;
+  FOR(a, A){
+    ya = 0.0;
+    FOR(i, K) ya += x[a*K + i];
+    ca = net.arcs[a].cap;
+    sum += ya/(ca-ya);
+  }
+  return sum;
+}
+
+Vector KleinrockFunction::g(const Vector &x) const{
+  int K = net.commoflows.size(), A = net.arcs.size();
+  assert(K*A == x.size()); // debug
+  Vector d(K*A);
+  Real ya, ca, dd;
+  FOR(a, A){
+    ya = 0.0; ca = net.arcs[a].cap;
+    FOR(i, K) ya += x[a*K + i];
+    dd = ca - ya;
+    dd = ca/(dd*dd);
+    FOR(i,K) d[a*K + i] = dd;
+  }
+  return d;
+}
+
+Vector KleinrockFunction::gg(const Vector &x) const{
+  int K = net.commoflows.size(), A = net.arcs.size();
+  assert(K*A == x.size()); // debug
+  Vector d(K*A);
+  Real ya, ca, dd;
+  FOR(a, A){
+    ya = 0.0; ca = net.arcs[a].cap;
+    FOR(i, K) ya += x[a*K + i];
+    dd = ca - ya;
+    dd = 2*ca/(dd*dd*dd);
+    FOR(i,K) d[a*K + i] = dd;
+  }
+  return d;
+}
+
+KleinrockFunction::KleinrockFunction(const MultiCommoNetwork &n) : net(n){
+}
+
+
 #define PHI 0.6180339887498948482045868343656
 
 //
