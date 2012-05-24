@@ -558,68 +558,21 @@ Vector CVP_MCNF::solve_by_dijkstra(){
   int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
   Timer timer;
   Real tic1, tic2, tic3, tic4, start = timer.elapsed();
-  bool exit_flag = false;
-  int output_row_width = 57+12;
+  bool exit_flag = false;  
+  DijkstraAlgorithm DA(net);
   
-  //////////////////////////////////////////////////////////////////////////
-  /////////// Adjacent List Initialisation
-  ///////////
-  AdjacentList adjl;
-  vector< vector<arc_t> > indexarcl(V), indexadjl(V);
-  vector< vertex_t * > trace(V);
-  vector< char * > vb(V);
-  vector< int > nv(V, 0);
-
-  adjl.V = V; adjl.A = A;
-  malloc_adjl(&adjl);
-  FOR(i, V) trace[i] = MALLOC(vertex_t, V);
-  FOR(i, V) vb[i] = MALLOC(char, V);
-
-  FOR(i,V)  
-    indexarcl[i] = vector<arc_t>(V, -1), 
-    indexadjl[i] = vector<arc_t>(V, -1);
-    
-  FOR(i, V+1) adjl.n_arcs[i] = 0;
-  FOR(a, A)   adjl.n_arcs[net.arcs[a].head]++;
-  FOR(i, V)   adjl.n_arcs[i+1] += adjl.n_arcs[i];
-    
-  FOR(a, A) {
-    int aa =  --adjl.n_arcs[net.arcs[a].head];
-    int u = net.arcs[a].head, v = net.arcs[a].tail;
-    indexarcl [u] [v] = a;
-    indexadjl [u] [v] = aa;
-    adjl.adjacent_vertices[aa] = net.arcs[a].tail;
-  }
-  
-  FOR(i, V) FOR(j, V) vb[i][j]= 0;
-  FOR(k, net.commoflows.size()) {
-    vb[net.commoflows[k].origin][net.commoflows[k].destination] = 1;
-    nv[net.commoflows[k].origin]++;
-  }  
-  ///////////
-  /////////// end of Adjacent List initialisation
-  ////////////////////////////////////////////////////////////////////////
-
   tic1 = timer.elapsed();
 
   // Initialisation by solving the intial network shortest paths
   FOR(a, A){
     NetworkArc arc = net.arcs[a];
-    adjl.costs[indexadjl[arc.head][arc.tail]] = cost_t(arc.cost);
+    DA.set_cost(arc.head, arc.tail, cost_t(arc.cost));
   }
-  FOR(i, V) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
-  
-  Vector x(A*K, 0.0);
-  FOR(k, K){
-    int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
-    Real demand = net.commoflows[k].demand;
-    while(v>=0 && v!=u){
-      x[indexarcl[trace[u][v]][v]*K + k] = demand;
-      v = trace[u][v];
-    }
-  }
+  Vector x(A*K);
+  DA.get_flows(x);
 
   // header row of the iteration report
+  int output_row_width = 57+12;
   FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
   iteration_report << left << setw(5)  << "Iter"
 		   << right << setw(8) << "t_total"
@@ -638,22 +591,10 @@ Vector CVP_MCNF::solve_by_dijkstra(){
     tic1 = timer.elapsed();
 
     Vector g = obj->g(x);
-    FOR(a, A){
-      int u = net.arcs[a].head, v = net.arcs[a].tail;
-      adjl.costs[indexadjl[u][v]] = cost_t(g[indexarcl[u][v]*K]);
-    }
-      
-    FOR(i, V) if(nv[i]>0) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
+    FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a*K]));
     
-    Vector sp(x.size(), 0);
-    FOR(k, K){
-      int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
-      Real demand = net.commoflows[k].demand;
-      while(v>=0 && v!=u) {
-	sp[ indexarcl [trace[u][v]] [v] * K + k] = demand;
-	v = trace[u][v];
-      }
-    }
+    Vector sp(x.size());
+    DA.get_flows(sp);
       
     tic2 = timer.elapsed();
       
@@ -688,13 +629,6 @@ Vector CVP_MCNF::solve_by_dijkstra(){
   // Reporting final results
   FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
   iteration_report<<"Optimal objective: "<<scientific<<setprecision(12)<<obj->f(x)<<endl;
-  
-  cout<<"Release adjl"<<endl;
-  free_adjl(&adjl);
-  cout<<"Relase vb"<<endl;
-  FOR(i, V) free(vb[i]);
-  cout<<"Relase trace"<<endl;
-  FOR(i, V) free(trace[i]);
 
   return x;
 }
@@ -702,83 +636,33 @@ Vector CVP_MCNF::solve_by_dijkstra(){
 Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   Real beta;
   int count = 0, iteration = 0;
+  int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
   Timer timer;
   Real tic1, tic2, tic3, tic4, start = timer.elapsed();
   bool exit_flag = false;
 
-  //////////////////////////////////////////////////////////////////////////
-  /////////// Adjacent List Initialisation
-  ///////////
-  int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
-  AdjacentList adjl;
-  vector< vector<arc_t> > indexarcl(V);
-  vector< vector<arc_t> > indexadjl(V);
-  vector< vertex_t * > trace(V);
-  vector< char * > vb(V);
-  vector< int > nv(V, 0);
-  int output_row_width = 117;
-
-  adjl.V = V; adjl.A = A;
-  malloc_adjl(&adjl);
-  FOR(i, V) trace[i] = MALLOC(vertex_t, V);
-  FOR(i, V) vb[i] = MALLOC(char, V);
-  
-  FOR(i,V)  
-    indexarcl[i] = vector<arc_t>(V, -1), 
-    indexadjl[i] = vector<arc_t>(V, -1);
-  
-  FOR(i, V+1) adjl.n_arcs[i] = 0;
-  FOR(a, A)   adjl.n_arcs[net.arcs[a].head]++;
-  FOR(i, V)   adjl.n_arcs[i+1] += adjl.n_arcs[i];
-    
-  FOR(a, A) {
-    int aa =  --adjl.n_arcs[net.arcs[a].head];
-    int u = net.arcs[a].head, v = net.arcs[a].tail;
-    indexarcl [u] [v] = a;
-    indexadjl [u] [v] = aa;
-    adjl.adjacent_vertices[aa] = net.arcs[a].tail;
-  }
-  
-  FOR(i, V) FOR(j, V) vb[i][j]= 0;
-  FOR(k, net.commoflows.size()) {
-    vb[net.commoflows[k].origin][net.commoflows[k].destination] = 1;
-    nv[net.commoflows[k].origin]++;
-  }  
-  ///////////
-  /////////// end of Adjacent List initialisation
-  ////////////////////////////////////////////////////////////////////////
-
+  DijkstraAlgorithm DA(net);
   tic1 = timer.elapsed();
 
   // Initialisation by solving the intial network shortest paths
   FOR(a, A){
     NetworkArc arc = net.arcs[a];
-    adjl.costs[indexadjl[arc.head][arc.tail]] = cost_t(arc.cost);
+    DA.set_cost(arc.head, arc.tail, cost_t(arc.cost));
   }
-  FOR(i, V) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
-  
-  Vector x0, x1(A*K, 0.0);
-  FOR(k, K){
-    int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
-    Real demand = net.commoflows[k].demand;
-    while(v>=0 && v!=u){
-      x1[indexarcl[trace[u][v]][v]*K + k] = demand;
-      v = trace[u][v];
-    }
-  }
+
+  Vector x0, x1(A*K, 0.0), sp(A*K);
+  DA.get_flows(x1);
+
   Real f0, f1 = obj->f(x1); 
   beta = initial_beta * sqrt(x1*x1);
   
-  //x1 = solve(this->initial_proxy_obj());
-  //f1 = obj->f(x1);
-
   // Timing and Reporting
   tic2 = timer.elapsed();
   iteration_report<<"Initialisation: time = "<<tic2-tic1<<"s; obj = "<<f1<<endl;
   tic1 = timer.elapsed();
 
   // header row of the iteration report
-  output_row_width = 130;
+  int output_row_width = 130;
   FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
   iteration_report << left << setw(4)  << "Iter"
 		   << right << setw(7) << "#solve"
@@ -811,8 +695,10 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     
     // Reduce beta and do projection until improvement
     g = obj->g(x0);
+
     //Vector gg = obj->gg(x0);
     //FOR(i, g.size()) if(gg[i]>1e-6) g[i] /= gg[i]; else g[i] = 0.0;
+
     Real normg = sqrt(g*g);
     g *= (1/normg);
 
@@ -820,7 +706,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
       z = g; z *= (-beta); z += x0; // z = x0 - beta*g
       x1 = solve(quad_proxy_obj(z));
       f1 = obj->f(x1);
-      count++; // counting number of solves (for reporting purpose)
+      count++; // counting number of solves (for reporting)
       if(f1 < f0) break;
       beta *= beta_down_factor;
     }
@@ -831,7 +717,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     Real cosine = 1 + (z*g)/sqrt((z*z)*(g*g));
     exit_flag = cosine  <= optimality_epsilon; 
     
-    tic2 = timer.elapsed();
+    tic2 = timer.elapsed(); // for timing
 
     // Line Search
     Real lambda = 1.0;
@@ -844,38 +730,17 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
       f1 = obj->f(x1);
     }
     
-    tic3 = timer.elapsed();
+    tic3 = timer.elapsed(); // for timing
     
-    Real f_ls = f1, fsp;
-    Real taustar0 = 0.0;
+    Real f_ls = f1, fsp, taustar0 = 0.0; // for reporting
 
     //taubound = taustar * 5; // new tau
     //if(taubound >= 0.5) taubound = 0.5; // new tau
     FOR(iter, SP_iterations_per_SOCP) {
-      double tick_gs_start = timer.elapsed(), tick_gs_end;
       g = obj->g(x1);
-      //iteration_report<<"1: "<<timer.elapsed() - tick_gs_start<<endl;
+      FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a*K]));
+      DA.get_flows(sp);
 
-      FOR(a, A){  
-        int u = net.arcs[a].head, v = net.arcs[a].tail;
-        adjl.costs[indexadjl[u][v]] = cost_t(g[indexarcl[u][v]*K]);
-      }
-      //iteration_report<<"2: "<<timer.elapsed() - tick_gs_start<<endl;
-        
-      FOR(i, V) if(nv[i]>0) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
-      //iteration_report<<"3: "<<timer.elapsed() - tick_gs_start<<endl;
-      
-      Vector sp(x1.size(), 0);
-      FOR(k, K){
-        int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
-        Real demand = net.commoflows[k].demand;
-        while(v>=0 && v!=u) {
-	  sp[ indexarcl [trace[u][v]] [v] * K + k] = demand;
-	  v = trace[u][v];
-        }
-      }
-      //iteration_report<<"4: "<<timer.elapsed() - tick_gs_start<<endl;
-      
       ////check gradient
       //Vector gsp, dx(sp); dx -= x1;
       //Real gxdx = (dx*g);
@@ -886,19 +751,16 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
       //if (taubound >= 1) taubound = 1;
       //else sp -= x1, sp *= taubound, sp += x1; // dx *= taubound;
 
-      int ii = 0;
       //// check gradient
       /*
       FOR(i, 20) {
 	gsp = obj->g(sp);
-	ii ++;
 	if((gsp*dx)*gxdx<0) break;
 	taubound *= 2;
 	sp += dx;
 	dx *= 2.0;
       }
       */
-      //iteration_report<<"5: "<<ii<<" "<<timer.elapsed() - tick_gs_start<<endl;
 
       ////new tau
       //iteration_report << taubound<<endl;
@@ -909,15 +771,10 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
       ////old tau
       taustar = section_search ( x1, sp, obj, line_search_iterations);
 
-      //iteration_report<<"6: "<<timer.elapsed() - tick_gs_start<<endl;
-
-      //iteration_report << taubound<< " " << taustar << endl;
-      x1 -= sp; x1 *= (1-taustar); x1 += sp;
+      x1 -= sp; x1 *= (1-taustar); x1 += sp; f1 = obj->f(x1);
       //taustar *= taubound; // old tau
-      f1 = obj->f(x1);
 
-      //iteration_report<<"7: "<<timer.elapsed() - tick_gs_start<<endl;
-      if(iter == 0) taustar0 = taustar;
+      if(iter == 0) taustar0 = taustar; // for reporting
     }
     
     // Timing and Reporting
@@ -936,7 +793,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 		     << right << setw(10) << setprecision(1) << scientific << cosine
 		     << right << setw(12) << setprecision(3) << fixed << timer.elapsed()-start
 		     << endl;
-    if(taustar == 0.0) taustar = 1.0;
+    if(taustar == 0.0) taustar = 1.0; 
   }
   
   // Reporting final results

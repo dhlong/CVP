@@ -2,6 +2,7 @@
 #define __NETWORK_H__
 
 #include "cvputility.h"
+#include "dijkstra.h"
 
 using namespace std;
 
@@ -42,7 +43,7 @@ struct Network : public Graph {
 
 // Commodity flow
 struct CommoFlow{
-  int origin, destination; 
+  int origin, destination;
   Real demand;
   CommoFlow(Vertex o, Vertex d, Real D);
 };
@@ -56,6 +57,35 @@ struct MultiCommoNetwork : public Graph {
 
   // construct by reading file
   MultiCommoNetwork(const char* filename, FileFormat format);
+};
+
+class DijkstraAlgorithm{
+ private:
+  MultiCommoNetwork net;
+  int V, A, K;
+
+  AdjacentList adjl;
+  vector< vector<arc_t> > indexarcl;
+  vector< vector<arc_t> > indexadjl;
+  vector< vertex_t * > trace;
+  vector< char * > vb;
+  vector< int > nv;
+
+  bool has_solved;
+
+  void solve();
+
+ public:
+  DijkstraAlgorithm(const MultiCommoNetwork &n);
+  ~DijkstraAlgorithm();
+
+  void set_cost(vertex_t u, vertex_t v, cost_t c){
+    arc_t a = indexadjl[u][v];
+    if(a>=0) adjl.costs[a] = c;
+    has_solved = false;
+  }
+
+  void get_flows(Vector &sp);
 };
 
 #endif

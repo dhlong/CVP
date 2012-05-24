@@ -235,3 +235,70 @@ MultiCommoNetwork::MultiCommoNetwork(const char * filename, FileFormat format)
     error_handle("File format not supported for multi-commodinty network");
   }
 }
+
+
+DijkstraAlgorithm::DijkstraAlgorithm(const MultiCommoNetwork &n):
+  net(n), V(n.getNVertex()), A(n.arcs.size()), K(n.commoflows.size()),
+  indexarcl(V), indexadjl(V), trace(V), vb(V), nv(V, 0)
+{
+  adjl.V = V; adjl.A = A;
+  malloc_adjl(&adjl);
+
+  FOR(i, V) trace[i] = MALLOC(vertex_t, V);
+  FOR(i, V) vb[i] = MALLOC(char, V);
+  
+  FOR(i,V)  
+    indexarcl[i] = vector<arc_t>(V, -1), 
+    indexadjl[i] = vector<arc_t>(V, -1);
+  
+  FOR(i, V+1) adjl.n_arcs[i] = 0;
+  FOR(a, A)   adjl.n_arcs[net.arcs[a].head]++;
+  FOR(i, V)   adjl.n_arcs[i+1] += adjl.n_arcs[i];
+    
+  FOR(a, A) {
+    int aa =  --adjl.n_arcs[net.arcs[a].head];
+    int u = net.arcs[a].head, v = net.arcs[a].tail;
+    indexarcl [u] [v] = a;
+    indexadjl [u] [v] = aa;
+    adjl.adjacent_vertices[aa] = net.arcs[a].tail;
+  }
+  
+  FOR(i, V) FOR(j, V) vb[i][j]= 0;
+  FOR(k, net.commoflows.size()) {
+    vb[net.commoflows[k].origin][net.commoflows[k].destination] = 1;
+    nv[net.commoflows[k].origin]++;
+  }  
+
+  has_solved = false;
+}
+
+DijkstraAlgorithm::~DijkstraAlgorithm(){
+  FOR(i, V){
+    FREE(vb[i]);
+    FREE(trace[i]);
+  }
+  free_adjl(&adjl);
+}
+
+extern fstream iteration_report;
+
+void DijkstraAlgorithm::solve(){
+  FOR(i, V) if(nv[i]>0) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
+  has_solved = true;
+}
+
+void DijkstraAlgorithm::get_flows(Vector &sp) {
+  if(sp.size() != K*A) sp = Vector(K*A, 0.0);
+  else FOR(i, sp.size()) sp[i] = 0.0;
+
+  if(!has_solved) solve();
+
+  FOR(k, K){
+    int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
+    Real demand = net.commoflows[k].demand;
+    while(v>=0 && v!=u) {
+      sp[ indexarcl [trace[u][v]] [v] * K + k] = demand;
+      v = trace[u][v];
+    }
+  }
+}

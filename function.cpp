@@ -410,7 +410,6 @@ Real section_search ( const Vector &A,
 		      bool to_use_golden_ratio,
 		      Real b1, Real b2)
 {
-  /*
   // Check whether the function can be reduced (a reducable function)
   // by casting it to ReducableFunction class
   ReducableFunction *casted_obj = dynamic_cast<ReducableFunction*> (obj);
@@ -428,7 +427,7 @@ Real section_search ( const Vector &A,
     delete reduced_obj;
     return lambda;
   }
-  */
+
   if(to_use_golden_ratio) return golden_section_search(A,B,obj,iterations);
   return general_section_search (A,B,obj,iterations,b1,b2);
 }
