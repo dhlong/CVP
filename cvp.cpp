@@ -50,6 +50,7 @@ void CVP::default_settings(){
   to_golden_search = true;
   to_do_shortest_path = true;
   to_do_SOCP = true;
+  to_include_capacity_constraints = true;
   SP_iterations_per_SOCP = 10;
   SP_iterations = 500;
   line_search_iterations = 20;
@@ -94,6 +95,8 @@ void CVP::read_settings(fstream &f){
       to_do_shortest_path = (strstr(line,"yes") != NULL);
     else if(strstr(line, "to do SOCP") != NULL)
       to_do_SOCP = (strstr(line,"yes") != NULL);
+    else if(strstr(line, "to include capacity constraints") != NULL)
+      to_include_capacity_constraints = (strstr(line,"yes") != NULL);
     else if(strstr(line, "SP iterations per SOCP") != NULL) 
       ss>>SP_iterations_per_SOCP;
     else if(strstr(line, "SP iterations") != NULL) 
@@ -109,6 +112,7 @@ void CVP::read_settings(fstream &f){
   iteration_report<<"\tline search iterations = "<<line_search_iterations<<endl;
   iteration_report<<(to_do_SOCP?"\tuse SOCP":"\tno use SOCP")<<endl;
   iteration_report<<(to_do_shortest_path?"\tuse shortest path":"\tno use shortest path")<<endl;
+  iteration_report<<(to_include_capacity_constraints?"\tinclude capacity constraints":"\tnot include capacity constraints")<<endl;
   if(to_do_shortest_path && to_do_SOCP)
     iteration_report<<"\tshortest path replications per iteration = "<<SP_iterations_per_SOCP<<endl;
   FOR(i, 51) iteration_report<<"="; iteration_report<<endl;
@@ -221,7 +225,7 @@ Vector CVP::solve(const IloObjective &iloobj){
 }
   
 CVP::~CVP(){
-  env.end();
+  //env.end();
   //if(proxy) proxy->end();
   //if(cplex) cplex->end();
   if(cplex) delete cplex;
@@ -315,7 +319,7 @@ Vector CVP::phase2(Vector *init){
       beta *= beta_down_factor;
     }
 
-    Real normdx_before_ls = sqrt((x1-x0)*(x1-x0)); // added by Hieu
+    //Real normdx_before_ls = sqrt((x1-x0)*(x1-x0)); // added by Hieu
 
     // Optimality check
     g = obj->g(x1); // g is now gradient at x1
@@ -329,13 +333,15 @@ Vector CVP::phase2(Vector *init){
     Real lambda = 1.0;
     bool do_line_search = to_line_search && ((x0-x1)*g<0);
     if(do_line_search){
-      if(to_golden_search) lambda = golden_search(x0, x1, obj, line_search_iterations);
-      else lambda = line_search(x0, x1, obj, line_search_iterations);
+      if(to_golden_search) 
+	lambda = section_search(x0, x1, obj, line_search_iterations);
+      else 
+	lambda = line_search(x0, x1, obj, line_search_iterations);
       x1 -= x0; x1 *= lambda; x1 += x0; // x1 = x0 + betamin*(x1-x0)
       f1 = obj->f(x1);
     }
 
-    Real normdx_after_ls = sqrt((x1-x0)*(x1-x0)); // added by Hieu
+    //Real normdx_after_ls = sqrt((x1-x0)*(x1-x0)); // added by Hieu
     
     // Timing and Reporting
     tic3 = timer.elapsed();
@@ -478,6 +484,7 @@ void CVP_MCNF::generate_network_constraints(){
 
       // Add the variable to the set of variables
       variables.add(IloNumVar(env, 0.0, IloInfinity, ssname.str().c_str()));
+      if(to_include_capacity_constraints) sum += variables[a*K +i];
     }
 
     FOR(i, K){
@@ -485,6 +492,10 @@ void CVP_MCNF::generate_network_constraints(){
       node[i*V + net.arcs[a].head] -= variables[a*K + i];
       node[i*V + net.arcs[a].tail] += variables[a*K + i];
     }
+    
+    // Capacity constraints
+    if(to_include_capacity_constraints) constraints.add(sum <= net.arcs[a].cap*0.99);
+    else sum.end();
   }
 
   // Generate flow constraints and add them to the constraint set
@@ -650,7 +661,7 @@ Vector CVP_MCNF::solve_by_dijkstra(){
     Vector gsp = obj->g(sp);
     Real f, fsp, tau = 0.0;
     if((gsp*dx)*(g*dx)<0) {
-      tau = golden_search(x, sp, obj, line_search_iterations);
+      tau = section_search(x, sp, obj, line_search_iterations);
       x -= sp; x *= (1-tau); x += sp;
       f = obj->f(x);
     } 
@@ -661,14 +672,15 @@ Vector CVP_MCNF::solve_by_dijkstra(){
   
     // Timing and Reporting
     tic4 = timer.elapsed();
-    iteration_report << left << setw(5)  << iteration
-		     << right << setw(8) << setprecision(4) << fixed << tic3-tic1
-		     << right << setw(8) << setprecision(4) << fixed << tic2-tic1
-		     << right << setw(8) << setprecision(4) << fixed << tic3-tic2
-		     << right << setw(8) << setprecision(4) << fixed << tau
-		     << right << setw(20) << setprecision(10) << scientific << f 
-		     << right << setw(12) << setprecision(3) << fixed << timer.elapsed()-start
-		     << endl;
+    if(iteration%50 == 0)
+      iteration_report << left << setw(5)  << iteration
+		       << right << setw(8) << setprecision(4) << fixed << tic3-tic1
+		       << right << setw(8) << setprecision(4) << fixed << tic2-tic1
+		       << right << setw(8) << setprecision(4) << fixed << tic3-tic2
+		       << right << setw(8) << setprecision(4) << fixed << tau
+		       << right << setw(20) << setprecision(10) << scientific << f 
+		       << right << setw(12) << setprecision(3) << fixed << timer.elapsed()-start
+		       << endl;
 
     exit_flag = iteration >= SP_iterations;
   }
@@ -756,6 +768,9 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   }
   Real f0, f1 = obj->f(x1); 
   beta = initial_beta * sqrt(x1*x1);
+  
+  //x1 = solve(this->initial_proxy_obj());
+  //f1 = obj->f(x1);
 
   // Timing and Reporting
   tic2 = timer.elapsed();
@@ -783,7 +798,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   
   // Loops
   Vector g, z;
-  Real taubound = -1, taustar = 0.5/2;
+  Real taubound = -1, taustar = 0.5/5;
   while(!exit_flag) {
     if(to_reset_beta) beta = initial_beta;
 
@@ -799,7 +814,6 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     //Vector gg = obj->gg(x0);
     //FOR(i, g.size()) if(gg[i]>1e-6) g[i] /= gg[i]; else g[i] = 0.0;
     Real normg = sqrt(g*g);
-    cout<<normg;
     g *= (1/normg);
 
     for(;;) {
@@ -823,7 +837,8 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     Real lambda = 1.0;
     bool do_line_search = to_line_search && ((x0-x1)*g<0);
     if(do_line_search){
-      if(to_golden_search) lambda = golden_search(x0, x1, obj, line_search_iterations);
+      if(to_golden_search) 
+	lambda = section_search(x0, x1, obj, line_search_iterations);
       else lambda = line_search(x0, x1, obj, line_search_iterations);
       x1 -= x0; x1 *= lambda; x1 += x0; // x1 = x0 + betamin*(x1-x0)
       f1 = obj->f(x1);
@@ -833,6 +848,9 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     
     Real f_ls = f1, fsp;
     Real taustar0 = 0.0;
+
+    //taubound = taustar * 5; // new tau
+    //if(taubound >= 0.5) taubound = 0.5; // new tau
     FOR(iter, SP_iterations_per_SOCP) {
       double tick_gs_start = timer.elapsed(), tick_gs_end;
       g = obj->g(x1);
@@ -857,14 +875,19 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
         }
       }
       //iteration_report<<"4: "<<timer.elapsed() - tick_gs_start<<endl;
-
+      
+      ////check gradient
       //Vector gsp, dx(sp); dx -= x1;
       //Real gxdx = (dx*g);
-
-      if (taustar <=0) taubound = 1;
-      else taubound = taustar * 4, sp -= x1, sp *= taubound, sp += x1;// dx *= taubound;
       
+      ////old tau
+      //if (taustar <=0) taubound = 1;
+      //else taubound = taustar * 4;
+      //if (taubound >= 1) taubound = 1;
+      //else sp -= x1, sp *= taubound, sp += x1; // dx *= taubound;
+
       int ii = 0;
+      //// check gradient
       /*
       FOR(i, 20) {
 	gsp = obj->g(sp);
@@ -877,11 +900,20 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
       */
       //iteration_report<<"5: "<<ii<<" "<<timer.elapsed() - tick_gs_start<<endl;
 
-      taustar = golden_search(x1, sp, obj, line_search_iterations);
+      ////new tau
+      //iteration_report << taubound<<endl;
+      //taustar = section_search ( x1, sp, obj, 
+      //line_search_iterations,
+      //false, taubound*(1-PHI), taubound*PHI);
+
+      ////old tau
+      taustar = section_search ( x1, sp, obj, line_search_iterations);
+
       //iteration_report<<"6: "<<timer.elapsed() - tick_gs_start<<endl;
 
+      //iteration_report << taubound<< " " << taustar << endl;
       x1 -= sp; x1 *= (1-taustar); x1 += sp;
-      taustar *= taubound;
+      //taustar *= taubound; // old tau
       f1 = obj->f(x1);
 
       //iteration_report<<"7: "<<timer.elapsed() - tick_gs_start<<endl;

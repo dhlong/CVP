@@ -44,6 +44,7 @@ class CVP{
   bool to_line_search;
   bool to_do_shortest_path;
   bool to_do_SOCP;
+  bool to_include_capacity_constraints;
   int SP_iterations_per_SOCP;
   int SP_iterations;
   int line_search_iterations;

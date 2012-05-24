@@ -101,6 +101,7 @@ int main(int argc, char* argv[]){
 
     cout<<"Modelling"<<endl;
     CVP_MCNF *aCVP =  new CVP_MCNF(new BPRFunction(net), net);
+    //CVP_MCNF *aCVP =  new CVP_MCNF(new KleinrockFunction(net), net);
     aCVP->read_settings(fini);
     tic3 = timer.elapsed();
 

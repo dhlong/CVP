@@ -179,6 +179,10 @@ Real KleinrockFunction::f(const Vector &x) const{
     ya = 0.0;
     FOR(i, K) ya += x[a*K + i];
     ca = net.arcs[a].cap;
+    if(ca-ya<=0){
+      cout<<"Error: ca-ya = "<<ca-ya<<endl;
+      exit(1);
+    }
     sum += ya/(ca-ya);
   }
   return sum;
@@ -192,6 +196,7 @@ Vector KleinrockFunction::g(const Vector &x) const{
   FOR(a, A){
     ya = 0.0; ca = net.arcs[a].cap;
     FOR(i, K) ya += x[a*K + i];
+    assert(ca-ya>0);
     dd = ca - ya;
     dd = ca/(dd*dd);
     FOR(i,K) d[a*K + i] = dd;
@@ -220,6 +225,7 @@ Vector KleinrockFunction::gg(const Vector &x) const{
     ya = 0.0; ca = net.arcs[a].cap;
     FOR(i, K) ya += x[a*K + i];
     dd = ca - ya;
+    assert(ca-ya>0);
     dd = 2*ca/(dd*dd*dd);
     FOR(i,K) d[a*K + i] = dd;
   }
@@ -237,6 +243,7 @@ Real ReducedKleinrockFunction::f(const Vector &x) const {
   FOR(a, A){
     ya = x[a];
     ca = net.arcs[a].cap;
+    assert(ca-ya>0);
     sum += ya/(ca-ya);
   }
   return sum;
@@ -249,6 +256,7 @@ Vector ReducedKleinrockFunction::g(const Vector &x) const{
   Real ya, ca, dd;
   FOR(a, A){
     ya = x[a]; ca = net.arcs[a].cap;
+    assert(ca-ya>0);
     dd = ca - ya;
     dd = ca/(dd*dd);
     d[a] = dd;
@@ -263,6 +271,7 @@ Vector ReducedKleinrockFunction::gg(const Vector &x) const{
   Real ya, ca, dd;
   FOR(a, A){
     ya = x[a]; ca = net.arcs[a].cap;
+    assert(ca-ya>0);
     dd = ca - ya;
     dd = 2*ca/(dd*dd*dd);
     d[a] = dd;
@@ -276,83 +285,152 @@ ReducedKleinrockFunction::ReducedKleinrockFunction(const MultiCommoNetwork &n) :
 
 #define PHI 0.6180339887498948482045868343656
 
-//
-// recuresively do golden search
-// x1 and x2 are the two middle points in the search segment AB
-// e.g    A----x1----x2----B
-// f1, f2, b1, b2 are the values of the function and the betas
-// correspoding to x1 and x2
-// fm and bm are to save the minimum value and beta while searching
-//
-void golden_search_recursive (Vector &x1, Vector &x2, 
-			      Real f1, Real f2, Real &fm,
-			      Real b1, Real b2, Real &bm,
-			      Function *obj,
-			      int count,
-			      double ratio) 
+Real golden_section_search ( const Vector &A,
+			     const Vector &B,
+			     Function *obj,
+			     int iterations)
 {
-  if(ratio > 0.5) ratio = 1 - ratio;
-  if(fabs(3*ratio - 1) < 1e-6) {
-    Vector dx(x2); dx -= x1;
-    Real dphi = (1-2*ratio)*((1-PHI)-ratio);
-    Real db = dphi*(b2-b1);
-    dx *= dphi;
-    x1 += dx; x2 -= dx;
-    b1 += db; b2 -= db;
-    f1 = obj->f(x1); f2 = obj->f(x2);
-    ratio += dphi/(1-2*ratio);
-  }
-  if (f1 > f2) {
-    x1 -= x2; x1 *= ( (1 - 3*ratio)/(1 - 2*ratio) ); x1 += x2;
-    f1 = obj->f(x1);
-    b1 = b1 + ratio/(1-2*ratio)*(b2-b1);
-    if(f1<fm) fm=f1, bm=b1;
-  } 
-  else {
-    x2 -= x1; x2 *= ( (1 - 3*ratio)/(1 - 2*ratio) ); x2 += x1;
-    f2 = obj->f(x2);
-    b2 = b2 + ratio/(1-2*ratio)*(b1-b2);
-    if(f2<fm) fm=f2, bm=b2;
-  }
+  Vector *x1 = new Vector(A), *x4 = new Vector(B);
+  Vector *x2 = new Vector(B), *x3 = new Vector(B), *xtmp;
   
-  if(count == 0) return;
-  //  if(fabs(b2-b1) < 1e-3*0.5*(fabs(b2)+fabs(b1))) return;
-  golden_search_recursive (x2,x1,f2,f1,fm,b2,b1,bm,obj,count-1,ratio/(1-ratio));
+  (*x2) -= A; (*x2) *= (1-PHI); (*x2) += A;
+  (*x3) += A; (*x3) -= (*x2);
+
+  Real f1 = obj->f(A), f4 = obj->f(B);
+  Real f2 = obj->f(*x2), f3 = obj->f(*x3), fm = f1;
+  Real b1 = 0, b4 = 1, b2 = 1-PHI, b3 = PHI, bm = 0;
+
+  if(fm > f2) fm = f2, bm = b2;
+  if(fm > f3) fm = f3, bm = b3;
+  if(fm > f4) fm = f4, bm = b4;
+
+  FOR(i, iterations){
+    if(f2>f3){
+      xtmp = x1; x1 = x2; x2 = x3; x3 = xtmp;
+      f1 = f2; f2 = f3;
+      b1 = b2; b2 = b3;
+
+      (*x3) = (*x1); (*x3) += (*x4); (*x3) -= (*x2);
+      f3 = obj->f(*x3);
+      b3 = b1 + b4 - b2;      
+
+      if(fm > f3) fm = f3, bm = b3;
+    }
+    else{
+      xtmp = x4; x4 = x3; x3 = x2; x2 = xtmp;
+      f4 = f3; f3 = f2;
+      b4 = b3; b3 = b2;
+
+      (*x2) = (*x1); (*x2) += (*x4); (*x2) -= (*x3);
+      f2 = obj->f(*x2);
+      b2 = b1 + b4 - b3;
+
+      if(fm > f2) fm = f2, bm = b2;
+    }
+  }
+
+  delete x1; delete x2; delete x3; delete x4;
+  return bm;
 }
 
-// golden search between A and B
-double golden_search ( const Vector &A, 
-		       const Vector &B, 
-		       Function *obj, 
-		       int niteration,
-		       double ratio)
+extern fstream iteration_report;
+
+Real general_section_search ( const Vector &A,
+			      const Vector &B,
+			      Function *obj,
+			      int iterations,
+			      Real b2, Real b3)
 {
+  //iteration_report << "general section search" << endl;
+  Vector *x1 = new Vector(A), *x4 = new Vector(B);
+  Vector *x2 = new Vector(B), *x3 = new Vector(B), *xtmp;
+  
+  (*x2) -= A; (*x2) *= b2; (*x2) += A;
+  (*x3) -= A; (*x3) *= b3; (*x3) += A;
+
+  Real f1 = obj->f(A), f4 = obj->f(B);
+  Real f2 = obj->f(*x2), f3 = obj->f(*x3), fm = f1;
+  Real b1 = 0, b4 = 1, bm = 0, tmp;
+
+  if(fm > f2) fm = f2, bm = b2;
+  if(fm > f3) fm = f3, bm = b3;
+  if(fm > f4) fm = f4, bm = b4;
+
+  FOR(i, iterations){
+    // make sure that the order is x1 -> x2 -> x3 -> x4
+    if(b2>b3){
+      xtmp = x2; x2 = x3; x3 = xtmp;
+      tmp  = b2; b2 = b3; b3 = tmp;
+      tmp  = f2; f2 = f3; f3 = tmp;
+    }
+
+    // safe guard the case where x2 and x3 are too close to each other
+    if(fabs(b2-b3)<1e-12 && fabs(f2-f3) < 1e-6){
+      iteration_report << "x2 and x3 too close"<<endl;
+      (*x3) -= (*x4); (*x3) *= (PHI-1); (*x3) += (*x2);
+      f3 = obj->f(*x3);
+      b3 -= b4; b3 *= (PHI-1); b3 += b2;
+      if(fm > f3) fm = f3, bm = b3;
+    }
+
+    if(f2>f3){
+      xtmp = x1; x1 = x2; x2 = x3; x3 = xtmp;
+      f1 = f2; f2 = f3;
+      b1 = b2; b2 = b3;
+
+      (*x3) = (*x1); (*x3) += (*x4); (*x3) -= (*x2);
+      f3 = obj->f(*x3);
+      b3 = b1 + b4 - b2;      
+
+      if(fm > f3) fm = f3, bm = b3;
+    }
+    else{
+      xtmp = x4; x4 = x3; x3 = x2; x2 = xtmp;
+      f4 = f3; f3 = f2;
+      b4 = b3; b3 = b2;
+
+      (*x2) = (*x1); (*x2) += (*x4); (*x2) -= (*x3);
+      f2 = obj->f(*x2);
+      b2 = b1 + b4 - b3;
+
+      if(fm > f2) fm = f2, bm = b2;
+    }
+  }  
+
+  delete x1; delete x2; delete x3; delete x4;
+  return bm;
+}
+
+
+// golden search between A and B
+Real section_search ( const Vector &A, 
+		      const Vector &B, 
+		      Function *obj, 
+		      int iterations,
+		      bool to_use_golden_ratio,
+		      Real b1, Real b2)
+{
+  /*
   // Check whether the function can be reduced (a reducable function)
   // by casting it to ReducableFunction class
   ReducableFunction *casted_obj = dynamic_cast<ReducableFunction*> (obj);
+
   if(casted_obj != NULL){
     // If it can be casted --> it is a reducable function
     // then do the search with the reduced function and variables instead
     Function* reduced_obj = casted_obj->reduced_function();
-    Real lambda = golden_search( casted_obj->reduced_variable(A), 
-				 casted_obj->reduced_variable(B), 
-				 reduced_obj,
-				 niteration, ratio);
+    Real lambda = section_search( casted_obj->reduced_variable(A), 
+				  casted_obj->reduced_variable(B), 
+				  reduced_obj,
+				  iterations,
+				  to_use_golden_ratio,
+				  b1, b2);
     delete reduced_obj;
     return lambda;
   }
-  
-  Vector x1(A), x2(A);
-  if(ratio < 0.5) ratio = 1-ratio;
-
-  x1 -= B; x1*=ratio; x1+=B; // x1 = PHI*A + (1-PHI)*B = PHI*(A-B) - B;
-  x2 += B; x2 -= x1; // x2 = (1-PHI)*A + PHI*B = A + B - x1
-
-  Real f1 = obj->f(x1), f2 = obj->f(x2), b1 = 1-ratio, b2 = ratio;
-  Real fm = f1, bm = b1;
-
-  golden_search_recursive (x1,x2,f1,f2,fm,b1,b2,bm,obj,niteration,1-ratio);
-  return bm;
+  */
+  if(to_use_golden_ratio) return golden_section_search(A,B,obj,iterations);
+  return general_section_search (A,B,obj,iterations,b1,b2);
 }
 
 // Naive line search between A and B
