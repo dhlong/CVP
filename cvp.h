@@ -122,6 +122,8 @@ public:
   virtual Vector optimize();
 };
 
+Vector solve_by_dijkstra_only(const MultiCommoNetwork&, Function*, int);
+
 #endif
 
 

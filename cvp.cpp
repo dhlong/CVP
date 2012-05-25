@@ -554,83 +554,7 @@ Vector CVP_MCNF::solvelinear(){
 }
 
 Vector CVP_MCNF::solve_by_dijkstra(){
-  int count = 0, iteration = 0;
-  int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
-  Timer timer;
-  Real tic1, tic2, tic3, tic4, start = timer.elapsed();
-  bool exit_flag = false;  
-  DijkstraAlgorithm DA(net);
-  
-  tic1 = timer.elapsed();
-
-  // Initialisation by solving the intial network shortest paths
-  FOR(a, A){
-    NetworkArc arc = net.arcs[a];
-    DA.set_cost(arc.head, arc.tail, cost_t(arc.cost));
-  }
-  Vector x(A*K);
-  DA.get_flows(x);
-
-  // header row of the iteration report
-  int output_row_width = 57+12;
-  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
-  iteration_report << left << setw(5)  << "Iter"
-		   << right << setw(8) << "t_total"
-		   << right << setw(8) << "t_SP"
-		   << right << setw(8) << "t_LS"
-		   << right << setw(8) << "tau"
-		   << right << setw(20) << "obj"
-		   << right << setw(12) << "t_elapsed"
-		   << endl;
-  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
-  
-  // Loops
-  while(!exit_flag) {
-    iteration++;
-    cout<<"Iteration "<<iteration<<endl;
-    tic1 = timer.elapsed();
-
-    Vector g = obj->g(x);
-    FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a*K]));
-    
-    Vector sp(x.size());
-    DA.get_flows(sp);
-      
-    tic2 = timer.elapsed();
-      
-    Vector dx(sp); dx -= x;
-    Vector gsp = obj->g(sp);
-    Real f, fsp, tau = 0.0;
-    if((gsp*dx)*(g*dx)<0) {
-      tau = section_search(x, sp, obj, line_search_iterations);
-      x -= sp; x *= (1-tau); x += sp;
-      f = obj->f(x);
-    } 
-    else if( (fsp = obj->f(sp)) < f ) x = sp, f = fsp, tau = 1.0;
-    else break;
-
-    tic3 = timer.elapsed();
-  
-    // Timing and Reporting
-    tic4 = timer.elapsed();
-    if(iteration%50 == 0)
-      iteration_report << left << setw(5)  << iteration
-		       << right << setw(8) << setprecision(4) << fixed << tic3-tic1
-		       << right << setw(8) << setprecision(4) << fixed << tic2-tic1
-		       << right << setw(8) << setprecision(4) << fixed << tic3-tic2
-		       << right << setw(8) << setprecision(4) << fixed << tau
-		       << right << setw(20) << setprecision(10) << scientific << f 
-		       << right << setw(12) << setprecision(3) << fixed << timer.elapsed()-start
-		       << endl;
-
-    exit_flag = iteration >= SP_iterations;
-  }
-  
-  // Reporting final results
-  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
-  iteration_report<<"Optimal objective: "<<scientific<<setprecision(12)<<obj->f(x)<<endl;
-
-  return x;
+  return solve_by_dijkstra_only(net,obj,SP_iterations);
 }
 
 Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
@@ -801,4 +725,65 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   iteration_report<<"Optimal objective: "<<scientific<<setprecision(12)<<obj->f(x1)<<endl;
 
   return x1;
+}
+
+Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int iterations)
+{
+  int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
+  DijkstraAlgorithm DA(net);
+  Timer timer;
+  double tic1, tic2, tic3, tic4, start = timer.elapsed();
+  Vector x(A*K), sp(A*K);
+
+  // Initialisation by solving the intial network shortest paths
+  FOR(a, A) 
+    DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(net.arcs[a].cost));
+  DA.get_flows(x);
+
+  // header row of the iteration report
+  int output_row_width = 57+12;
+  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
+  iteration_report << left << setw(5)  << "Iter"
+		   << right << setw(8) << "t_total"
+		   << right << setw(8) << "t_SP"
+		   << right << setw(8) << "t_LS"
+		   << right << setw(8) << "tau"
+		   << right << setw(20) << "obj"
+		   << right << setw(12) << "t_elapsed"
+		   << endl;
+  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
+  
+  // Loops
+  FOR(iteration, iterations) {
+    cout<<"Iteration "<<iteration<<endl;
+    tic1 = timer.elapsed();
+
+    Vector g = obj->g(x);
+    FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a*K]));
+    DA.get_flows(sp);
+      
+    tic2 = timer.elapsed();
+      
+    Real tau = section_search(x, sp, obj);
+    x -= sp; x *= (1-tau); x += sp;
+
+    tic3 = timer.elapsed();
+  
+    // Timing and Reporting
+    if(iteration%50 == 0)
+      iteration_report << left << setw(5)  << iteration
+		       << right << setw(8) << setprecision(4) << fixed << tic3-tic1
+		       << right << setw(8) << setprecision(4) << fixed << tic2-tic1
+		       << right << setw(8) << setprecision(4) << fixed << tic3-tic2
+		       << right << setw(8) << setprecision(4) << fixed << tau
+		       << right << setw(20) << setprecision(10) << scientific << obj->f(x)
+		       << right << setw(12) << setprecision(3) << fixed << timer.elapsed()-start
+		       << endl;
+  }
+  
+  // Reporting final results
+  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
+  iteration_report<<"Optimal objective: "<<scientific<<setprecision(12)<<obj->f(x)<<endl;
+
+  return x;  
 }
