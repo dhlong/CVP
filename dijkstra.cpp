@@ -36,6 +36,10 @@ void dijkstra ( AdjacentList adjl,
 		char *vb,
 		vertex_t nv,
 		
+		vertex_t *heap,
+		index_t *pos,
+		cost_t *d,
+		
 		vertex_t *trace ) 
 {
   vertex_t i, dadvertex, childvertex, childvertex2;
@@ -43,10 +47,6 @@ void dijkstra ( AdjacentList adjl,
   cost_t c, dadcost, childcost, childcost2;
 
   // Initialisation
-  vertex_t *heap = MALLOC(vertex_t, adjl.V);
-  index_t  *pos  = MALLOC(index_t,  adjl.V);
-  cost_t *d = MALLOC(cost_t, adjl.V);
-
   for(i = 0; i < adjl.V; i++) pos[i] = -1, trace[i] = -1;  
   d[u] = 0; heap[0] = u; pos[u] = 0;
   
@@ -110,7 +110,7 @@ void dijkstra ( AdjacentList adjl,
     }
   }
 
-  FREE(heap);
-  FREE(pos);
-  FREE(d);
+  //FREE(heap);
+  //FREE(pos);
+  //FREE(d);
 }

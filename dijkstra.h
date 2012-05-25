@@ -20,7 +20,10 @@ void free_adjl(AdjacentList *al);
 void dijkstra ( AdjacentList adjl,		
 		vertex_t u,
 		char *vb,
-		vertex_t nv,		
+		vertex_t nv,	
+		vertex_t *heap,
+		index_t *pos,
+		cost_t *d,
 		vertex_t *trace);
 
 		

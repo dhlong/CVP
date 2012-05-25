@@ -237,7 +237,7 @@ MultiCommoNetwork::MultiCommoNetwork(const char * filename, FileFormat format)
 }
 
 
-DijkstraAlgorithm::DijkstraAlgorithm(const MultiCommoNetwork &n):
+ShortestPathOracle::ShortestPathOracle(const MultiCommoNetwork &n):
   net(n), V(n.getNVertex()), A(n.arcs.size()), K(n.commoflows.size()),
   indexarcl(V), indexadjl(V), trace(V), vb(V), nv(V, 0)
 {
@@ -269,25 +269,34 @@ DijkstraAlgorithm::DijkstraAlgorithm(const MultiCommoNetwork &n):
     nv[net.commoflows[k].origin]++;
   }  
 
+  heap = MALLOC(vertex_t, V);
+  pos  = MALLOC(index_t,  V);
+  d = MALLOC(cost_t, V);
+  
+
   has_solved = false;
 }
 
-DijkstraAlgorithm::~DijkstraAlgorithm(){
+ShortestPathOracle::~ShortestPathOracle(){
   FOR(i, V){
     FREE(vb[i]);
     FREE(trace[i]);
   }
+  FREE(heap);
+  FREE(pos);
+  FREE(d);
   free_adjl(&adjl);
 }
 
 extern fstream iteration_report;
 
-void DijkstraAlgorithm::solve(){
-  FOR(i, V) if(nv[i]>0) dijkstra(adjl, i, vb[i], nv[i], trace[i]);
+void ShortestPathOracle::solve(){
+  FOR(i, V) if(nv[i]>0) 
+    dijkstra(adjl, i, vb[i], nv[i], heap, pos, d, trace[i]);
   has_solved = true;
 }
 
-void DijkstraAlgorithm::get_flows(Vector &sp) {
+void ShortestPathOracle::get_flows(Vector &sp) {
   if(sp.size() != K*A) sp = Vector(K*A, 0.0);
   else FOR(i, sp.size()) sp[i] = 0.0;
 

@@ -59,7 +59,7 @@ struct MultiCommoNetwork : public Graph {
   MultiCommoNetwork(const char* filename, FileFormat format);
 };
 
-class DijkstraAlgorithm{
+class ShortestPathOracle{
  private:
   MultiCommoNetwork net;
   int V, A, K;
@@ -71,13 +71,17 @@ class DijkstraAlgorithm{
   vector< char * > vb;
   vector< int > nv;
 
+  vertex_t *heap;
+  index_t  *pos;
+  cost_t *d;
+
   bool has_solved;
 
   void solve();
 
  public:
-  DijkstraAlgorithm(const MultiCommoNetwork &n);
-  ~DijkstraAlgorithm();
+  ShortestPathOracle(const MultiCommoNetwork &n);
+  ~ShortestPathOracle();
 
   void set_cost(vertex_t u, vertex_t v, cost_t c){
     arc_t a = indexadjl[u][v];

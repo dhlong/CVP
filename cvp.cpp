@@ -565,7 +565,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   Real tic1, tic2, tic3, tic4, start = timer.elapsed();
   bool exit_flag = false;
 
-  DijkstraAlgorithm DA(net);
+  ShortestPathOracle DA(net);
   tic1 = timer.elapsed();
 
   // Initialisation by solving the intial network shortest paths
@@ -730,7 +730,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int iterations)
 {
   int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
-  DijkstraAlgorithm DA(net);
+  ShortestPathOracle DA(net);
   Timer timer;
   double tic1, tic2, tic3, tic4, start = timer.elapsed();
   Vector x(A*K), sp(A*K);
