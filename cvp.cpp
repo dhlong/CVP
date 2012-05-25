@@ -123,7 +123,7 @@ void CVP::read_settings(fstream &f){
 // projection the 0-point on the feasible set
 IloObjective CVP::initial_proxy_obj(){
   Vector x(variables.getSize(), 0.0);
-  return quad_proxy_obj(yy(x,1.0));
+  return quad_proxy_obj(x);
 }
 
 // default initial solution by solving the initial proxy objective
@@ -132,32 +132,28 @@ Vector CVP::initial_solution(){
   return solve(this->initial_proxy_obj());
 }
 
-// return x - alpha * gradient(x)
-Vector CVP::yy(const Vector &x, Real alpha){
-  Vector z = obj->g(x);
-  z *= (-alpha); z += x; // z = -alpha * g(x) + x
-  return z;
-}
-
 // return the proxy objective min ||x - z||
 IloObjective CVP::quad_proxy_obj(const Vector &z){
+  IloExpr sum(env);
+  FOR(i, z.size()) sum += (2*z[i])*variables[i];
   return IloMinimize(env,
-	       IloScalProd(variables, variables)
-	       + (z*z)
-	       - 2*IloScalProd(variables, Vector2IloNumArray(env,z)));
+		     IloScalProd(variables, variables)
+		     + (z*z)
+		     - sum);
 }
 
 // return the proxy objective min gradient(x0) * x
 IloObjective CVP::linear_proxy_obj(const Vector &x0){
-  Vector g = obj->g(x0);
+  Vector g(obj->g(x0));
   Real norm = sqrt(g*g);
   g *= (1.0/norm);
-  IloNumArray coef = Vector2IloNumArray(env, g);
-  return IloMinimize(env,IloScalProd(coef, variables));
+  IloExpr sum(env);
+  FOR(i, variables.getSize()) sum += g[i]*variables[i];
+  return IloMinimize(env, sum);
 }
 
 bool CVP::is_optimal(const Vector &x, const Vector &z){
-  Vector d = obj->g(x), y = z;
+  Vector d(obj->g(x)), y(z);
   y -= x;
   return 1+(d*y)/sqrt((y*y)*(d*d)) <= optimality_epsilon;
 }
@@ -174,7 +170,7 @@ Vector CVP::solve(const IloObjective &iloobj){
     if (proxy != NULL) proxy->remove(*proxy_obj);
     proxy_obj->end();
     delete proxy_obj;
-  } 
+  }
   
   // create new proxy objective
   proxy_obj = new IloObjective(iloobj);   
@@ -206,7 +202,9 @@ Vector CVP::solve(const IloObjective &iloobj){
   // obtain the optimal solution
   IloNumArray vals(env,variables.getSize());
   cplex->getValues(vals, variables);
-  Vector x = IloNumArray2Vector(vals);
+
+  Vector x(vals.getSize());
+  FOR(i, x.size()) x[i] = Real(vals[i]);
 
   // calculate new real objective (for reporting)
   Real obj_value = (obj==NULL ? -1 : obj->f(x));
@@ -214,20 +212,17 @@ Vector CVP::solve(const IloObjective &iloobj){
   
   // reporting to solve report
   solve_report << setprecision(10) << tic2 - tic1 << "\t"
-                << setprecision(10) << tic3 - tic2 << "\t"
-                << setprecision(10) << tic4 - tic3 << "\t"
-                << setprecision(10) << tic5 - tic4 << "\t"
-                << setprecision(10) << tic6 - tic5 << "\t"
-                << setprecision(10) << obj_value << "\t"
-		<< endl;
+	       << setprecision(10) << tic3 - tic2 << "\t"
+	       << setprecision(10) << tic4 - tic3 << "\t"
+	       << setprecision(10) << tic5 - tic4 << "\t"
+	       << setprecision(10) << tic6 - tic5 << "\t"
+	       << setprecision(10) << obj_value << "\t"
+	       << endl;
 
   return x;
 }
   
 CVP::~CVP(){
-  //env.end();
-  //if(proxy) proxy->end();
-  //if(cplex) cplex->end();
   if(cplex) delete cplex;
   if(proxy) delete proxy;
   if(proxy_obj) delete proxy_obj;
@@ -256,7 +251,7 @@ Vector CVP::phase1(Vector *init){
     iteration_report<<"Phase 1\t"<<iteration<<"\t"<<"\t"<<tic2-tic1<<endl;
     if(x==pre_x) return x;
   } while(cur_cost<=pre_cost);
-
+  
   cout<<"Phase 1 failed"<<endl;
   return Vector();
 }
@@ -283,13 +278,13 @@ Vector CVP::phase2(Vector *init){
 
   // header row of the iteration report
   FOR(i,71) iteration_report<<"-"; iteration_report<<endl;
-  iteration_report << left << setw(6)  << "Iter"
-		   << left << setw(8)  << "#solve"
-		   << right << setw(8) << "time"
+  iteration_report << left  << setw(6)  << "Iter"
+		   << left  << setw(8)  << "#solve"
+		   << right << setw(8)  << "time"
 		   << right << setw(10) << "beta"
 		   << right << setw(6)  << "ls?"
-		   << right << setw(8) << "time_ls"
-		   << right << setw(8) << "lambda*"
+		   << right << setw(8)  << "time_ls"
+		   << right << setw(8)  << "lambda*"
 		   << right << setw(10) << "cosine"
 		   << right << setw(17) << "obj"<<endl;
   FOR(i,71) iteration_report<<"-"; iteration_report<<endl;
@@ -311,7 +306,7 @@ Vector CVP::phase2(Vector *init){
     Real normg = sqrt(g*g); // added by Hieu
 
     for(;;) {
-      z = g; z *= (-beta)/normg; z += x0; // z = x0 - beta*g
+      z = g; z *= (-beta/normg); z += x0; // z = x0 - beta*g
       x1 = solve(quad_proxy_obj(z));
       f1 = obj->f(x1);
       count++; // counting number of solves (for reporting purpose)
@@ -345,13 +340,13 @@ Vector CVP::phase2(Vector *init){
     
     // Timing and Reporting
     tic3 = timer.elapsed();
-    iteration_report << left << setw(6)  << iteration
-		     << left << setw(8)  << count
-		     << right << setw(8) << setprecision(4) << fixed << tic3-tic1
+    iteration_report << left  << setw(6)  << iteration
+		     << left  << setw(8)  << count
+		     << right << setw(8)  << setprecision(4) << fixed << tic3-tic1
 		     << right << setw(10) << setprecision(5) << fixed << beta
-		     << right << setw(6) << (do_line_search ? "YES":"NO")
-		     << right << setw(8) << setprecision(4) << fixed << tic3-tic2
-		     << right << setw(8) << setprecision(3) << fixed << lambda
+		     << right << setw(6)  << (do_line_search ? "YES":"NO")
+		     << right << setw(8)  << setprecision(4) << fixed << tic3-tic2
+		     << right << setw(8)  << setprecision(3) << fixed << lambda
 		     << right << setw(10) << setprecision(5) << scientific << cosine
 		     << right << setw(17) << setprecision(8) << scientific << f1 << endl;
   }

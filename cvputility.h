@@ -24,8 +24,10 @@
 
 #define OUTPUT_ROW_WIDTH 97
 
+using namespace std;
+
 typedef IloNum Real;
-typedef std::vector<Real> Vector;
+typedef vector<Real> Vector;
 typedef int Vertex;
 
 /**
@@ -76,20 +78,6 @@ inline bool operator == (const Vector &x, const Vector &y){
   return true;
 }
 
-
-// Conversion between IloNumArray and Vector
-inline Vector IloNumArray2Vector(const IloNumArray &a){
-  Vector v(a.getSize());
-  FOR(i, v.size()) v[i]=a[i];
-  return v;
-}
-
-inline IloNumArray Vector2IloNumArray(const IloEnv &env, const Vector &v){
-  IloNumArray a(env, v.size());
-  FOR(i, v.size()) a[i]=v[i];
-  return a;
-}
-
 template <typename T> inline bool updatemin(T &a, T b){
   if(a>b) return a=b, true;
   return false;
@@ -100,10 +88,33 @@ template <typename T> inline bool updatemax(T &a, T b){
   return false;
 }
 
+template<typename T>
+bool read_param(string fininame, const string &alias, T &t){
+  fstream f(fininame.c_str(), fstream::in);
+  char line[305], *str;
+
+  while(!f.eof()){
+    f.getline(line, 300);
+    str = strrchr(line,'#'); // comments are marked by '#' character
+    if(str != NULL) continue;
+    if(strstr(line, alias.c_str()) == NULL) continue;
+    str = strrchr(line,'='); // value delim by the '=' character
+    if(str == NULL) continue; // no delim found, read next line
+
+    stringstream ss(str+1, stringstream::in);
+    ss>>t;
+    f.close();
+    return true;
+  }
+
+  f.close();
+  return false;
+}
+
 // report error message and terminate the program 
 inline void error_handle(const char* message){
-  std::cout<<message<<std::endl;
-  std::cout<<"Terminating the program"<<std::endl;
+  cout<<message<<endl;
+  cout<<"Terminating the program"<<endl;
   exit(1);
 }
 
@@ -209,12 +220,12 @@ public:
   }
 };
 
-inline void memory_report(std::fstream &f){
+inline void memory_report(fstream &f){
   DWORD processID = GetCurrentProcessId();
   HANDLE hProcess;
   PROCESS_MEMORY_COUNTERS pmc;
   // Print the process identifier.
-  f<<std::endl<<"Memory report for Process ID "<<processID<<std::endl;
+  f<<endl<<"Memory report for Process ID "<<processID<<endl;
 
   // Print information about the memory usage of the process.
   hProcess = OpenProcess(  PROCESS_QUERY_INFORMATION |
@@ -224,15 +235,15 @@ inline void memory_report(std::fstream &f){
   if (NULL == hProcess) return;
 
   if (GetProcessMemoryInfo(hProcess, &pmc, sizeof(pmc))) {
-    //f<<"\tPageFaultCount: "<<pmc.PageFaultCount<<std::endl;
-    f<<"PEAK MEMORY CONSUMPTION: "<<pmc.PeakWorkingSetSize<<std::endl;
-    //f<<"\tYour app's CURRENT MEMORY CONSUMPTION: "<<pmc.WorkingSetSize<<std::endl;
-    //f<<"\tQuotaPeakPagedPoolUsage: "<<pmc.QuotaPeakPagedPoolUsage<<std::endl;
-    //f<<"\tQuotaPagedPoolUsage: "<<pmc.QuotaPagedPoolUsage<<std::endl;
-    //f<<"\tQuotaPeakNonPagedPoolUsage: "<<pmc.QuotaPeakNonPagedPoolUsage<<std::endl;
-    //f<<"\tQuotaNonPagedPoolUsage: "<<pmc.QuotaNonPagedPoolUsage<<std::endl;
-    //f<<"\tPagefileUsage: "<<pmc.PagefileUsage<<std::endl; 
-    //f<<"\tPeakPagefileUsage: "<<pmc.PeakPagefileUsage<<std::endl;
+    //f<<"\tPageFaultCount: "<<pmc.PageFaultCount<<endl;
+    f<<"PEAK MEMORY CONSUMPTION: "<<pmc.PeakWorkingSetSize<<endl;
+    //f<<"\tYour app's CURRENT MEMORY CONSUMPTION: "<<pmc.WorkingSetSize<<endl;
+    //f<<"\tQuotaPeakPagedPoolUsage: "<<pmc.QuotaPeakPagedPoolUsage<<endl;
+    //f<<"\tQuotaPagedPoolUsage: "<<pmc.QuotaPagedPoolUsage<<endl;
+    //f<<"\tQuotaPeakNonPagedPoolUsage: "<<pmc.QuotaPeakNonPagedPoolUsage<<endl;
+    //f<<"\tQuotaNonPagedPoolUsage: "<<pmc.QuotaNonPagedPoolUsage<<endl;
+    //f<<"\tPagefileUsage: "<<pmc.PagefileUsage<<endl; 
+    //f<<"\tPeakPagefileUsage: "<<pmc.PeakPagefileUsage<<endl;
   }
   CloseHandle( hProcess );
 }
@@ -263,16 +274,16 @@ public:
   }
 };
 
-inline void memory_report(std::fstream &f){
+inline void memory_report(fstream &f){
   FILE* file = fopen("/proc/self/status", "r");
   int result = -1;
   char line[128];
 
   while (fgets(line, 128, file) != NULL){
     if (strncmp(line, "VmSize:", 7) == 0){
-      std::stringstream ss(line+7, std::stringstream::in);
+      stringstream ss(line+7, stringstream::in);
       ss>>result;
-      f<<"Peak Memory Usage: "<< result << "kB" << std::endl;
+      f<<"Peak Memory Usage: "<< result << "kB" << endl;
       break;
     }
   }

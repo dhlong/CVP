@@ -29,7 +29,6 @@ class CVP{
   IloCplex *cplex; // pointer to the cplex (CPLEX solver)
 
   // Helper functions
-  Vector yy(const Vector &x, Real beta);
   bool is_optimal(const Vector &x, const Vector &y);
   
  protected:
