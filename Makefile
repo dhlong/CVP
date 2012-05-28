@@ -22,7 +22,7 @@ CC  = gcc
 # Compiler options 
 # ---------------------------------------------------------------------
 
-CCOPT = -O3 -fPIC -fexceptions -DIL_STD
+CCOPT = -O3 -fPIC -fexceptions -DIL_STD -g
 
 # ---------------------------------------------------------------------
 # Link options and libraries

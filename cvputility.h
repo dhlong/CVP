@@ -1,9 +1,9 @@
 #ifndef __CVPUTILITY_H__
 #define __CVPUTILITY_H__
 
-#include <ilcplex/ilocplex.h>
 #include <vector>
 #include <iostream>
+#include <fstream>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -22,11 +22,9 @@
     (var) = NULL;				\
   } while(0)
 
-#define OUTPUT_ROW_WIDTH 97
-
 using namespace std;
 
-typedef IloNum Real;
+typedef double Real;
 typedef vector<Real> Vector;
 typedef int Vertex;
 

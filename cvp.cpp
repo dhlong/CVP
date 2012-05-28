@@ -136,20 +136,24 @@ Vector CVP::initial_solution(){
 IloObjective CVP::quad_proxy_obj(const Vector &z){
   IloExpr sum(env);
   FOR(i, z.size()) sum += (2*z[i])*variables[i];
-  return IloMinimize(env,
-		     IloScalProd(variables, variables)
-		     + (z*z)
-		     - sum);
+  
+  IloObjective obj = IloMinimize(env,
+				 IloScalProd(variables, variables)
+				 + (z*z)
+				 - sum);
+  sum.end();
+  return obj;
 }
 
 // return the proxy objective min gradient(x0) * x
 IloObjective CVP::linear_proxy_obj(const Vector &x0){
-  Vector g(obj->g(x0));
-  Real norm = sqrt(g*g);
-  g *= (1.0/norm);
   IloExpr sum(env);
+  Vector g(obj->g(x0));
+  g *= (1.0/sqrt(g*g));
   FOR(i, variables.getSize()) sum += g[i]*variables[i];
-  return IloMinimize(env, sum);
+  IloObjective obj = IloMinimize(env, sum);
+  sum.end();
+  return obj;
 }
 
 bool CVP::is_optimal(const Vector &x, const Vector &z){
@@ -185,10 +189,12 @@ Vector CVP::solve(const IloObjective &iloobj){
   // add new proxy objective to the proxy model
   proxy->add(*proxy_obj);
   tic3 = timer.elapsed();
-
+  
   // If cplex has not been created, create it
   if (cplex == NULL) cplex = new IloCplex(*proxy);
   tic4 = timer.elapsed();
+
+  //cplex->setParam(IloCplex::PopulateLim, 0);
 
   // solve
   if(!cplex->solve()) {
@@ -205,6 +211,8 @@ Vector CVP::solve(const IloObjective &iloobj){
 
   Vector x(vals.getSize());
   FOR(i, x.size()) x[i] = Real(vals[i]);
+
+  vals.end();
 
   // calculate new real objective (for reporting)
   Real obj_value = (obj==NULL ? -1 : obj->f(x));
@@ -227,6 +235,8 @@ CVP::~CVP(){
   if(proxy) delete proxy;
   if(proxy_obj) delete proxy_obj;
   if(obj) delete obj;
+  //variables.end();
+  //constraints.end();
 }
 
 Vector CVP::phase1(Vector *init){
@@ -413,6 +423,8 @@ void CVP_NF::generate_flow_constraints(){
   
   // Generate constraint for normal node and add to the constraint set
   FOR(j, V) if(S.count(j)==0) constraints.add(node[j] == 0.0);
+
+  node.end();
 }
 
 IloObjective CVP_NF::initial_proxy_obj(){
@@ -426,7 +438,9 @@ IloObjective CVP_NF::initial_proxy_obj(){
     coef = Real(net.arcs[i].head)/Real(net.arcs[i].tail);
     expr += coef * variables[i];
   }
-  return IloMinimize(env, expr);
+  IloObjective obj = IloMinimize(env, expr);
+  expr.end();
+  return obj;
 }
 
 Vector CVP_NF::solvelinear(){    
@@ -569,7 +583,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     DA.set_cost(arc.head, arc.tail, cost_t(arc.cost));
   }
 
-  Vector x0, x1(A*K, 0.0), sp(A*K);
+  Vector x0(A*K), x1(A*K, 0.0), sp(A*K);
   DA.get_flows(x1);
 
   Real f0, f1 = obj->f(x1); 
@@ -689,7 +703,6 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 
       ////old tau
       taustar = section_search ( x1, sp, obj, line_search_iterations);
-
       x1 -= sp; x1 *= (1-taustar); x1 += sp; f1 = obj->f(x1);
       //taustar *= taubound; // old tau
 
@@ -753,7 +766,7 @@ Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int i
     cout<<"Iteration "<<iteration<<endl;
     tic1 = timer.elapsed();
 
-    Vector g = obj->g(x);
+    Vector g(obj->g(x));
     FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a*K]));
     DA.get_flows(sp);
       

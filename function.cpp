@@ -433,7 +433,7 @@ Real section_search ( const Vector &A,
 }
 
 // Naive line search between A and B
-double line_search (const Vector &A, const Vector &B, Function *obj, int niteration){
+Real line_search (const Vector &A, const Vector &B, Function *obj, int niteration){
   Vector x(A), dx(B);
   Real fmin = obj->f(x), imin = 0.0, f;
   dx -= A; dx *= (1.0/niteration);

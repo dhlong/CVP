@@ -101,15 +101,15 @@ class ReducedKleinrockFunction : public Function {
   ReducedKleinrockFunction(const MultiCommoNetwork &n);  
 };
 
-double section_search ( const Vector &x0, 
-			const Vector &x1, 
-			Function *obj, 
-			int iterations = 20,
-			bool to_use_golden_ratio = true,
-			Real b1 = 1-PHI, 
-			Real b2 = PHI);
+Real section_search ( const Vector &x0, 
+		      const Vector &x1, 
+		      Function *obj, 
+		      int iterations = 20,
+		      bool to_use_golden_ratio = true,
+		      Real b1 = 1-PHI, 
+		      Real b2 = PHI);
 
-double line_search (const Vector &x0, const Vector &x1, Function *obj, int niteration = 20);
+Real line_search (const Vector &x0, const Vector &x1, Function *obj, int niteration = 20);
 
 #endif
 

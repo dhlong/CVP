@@ -19,9 +19,6 @@ CommoFlow::CommoFlow(Vertex o, Vertex d, Real D):
 //////////
 //////////////////////////////////////////////////////////////
 
-Graph::Graph() : arcs() {}
-Graph::Graph(const Graph & graph) : arcs(graph.arcs) {}
-
 int Graph::getNVertex() const{
   int V_=0;
   FOR(i, arcs.size()){
@@ -46,14 +43,9 @@ void Graph::write_pajek(const char* filename){
 //////////
 //////////////////////////////////////////////////////////////
 
-Network::Network(): Graph(), supply(), demand()
-{}
 
-Network::Network(const Network &n): 
-  Graph(n),
-  supply(n.supply), 
-  demand(n.demand) 
-{}
+Network::Network(): Graph(), supply(), demand() {
+}
 
 // constructor by reading file
 Network::Network(const char* filename, FileFormat format)
@@ -135,14 +127,6 @@ Network::Network(int n, Real cap){
 ////////// Multi-commodity Network constructors
 //////////
 //////////////////////////////////////////////////////////////
-
-MultiCommoNetwork::MultiCommoNetwork(): Graph(), commoflows() 
-{}
-
-MultiCommoNetwork::MultiCommoNetwork(const MultiCommoNetwork &net)
-  : Graph(net), commoflows(net.commoflows)
-{}
-
 
 // constructor by reading file
 MultiCommoNetwork::MultiCommoNetwork(const char * filename, FileFormat format)
