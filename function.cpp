@@ -350,6 +350,7 @@ Real general_section_search ( const Vector &A,
 
   Real f1 = obj->f(A), f4 = obj->f(B);
   Real f2 = obj->f(*x2), f3 = obj->f(*x3), fm = f1;
+  Real fbound=0, fnewbound;
   Real b1 = 0, b4 = 1, bm = 0, tmp;
 
   if(fm > f2) fm = f2, bm = b2;
@@ -374,6 +375,9 @@ Real general_section_search ( const Vector &A,
     }
 
     if(f2>f3){
+      fnewbound = (b4-b1)/(b2-b1)*(f2-f1)+f1;
+      if(fnewbound > fbound) fbound = fnewbound;
+
       xtmp = x1; x1 = x2; x2 = x3; x3 = xtmp;
       f1 = f2; f2 = f3;
       b1 = b2; b2 = b3;
@@ -385,6 +389,9 @@ Real general_section_search ( const Vector &A,
       if(fm > f3) fm = f3, bm = b3;
     }
     else{
+      fnewbound = (b1-b4)/(b3-b4)*(f3-f4)+f4;
+      if(fnewbound > fbound) fbound = fnewbound;
+
       xtmp = x4; x4 = x3; x3 = x2; x2 = xtmp;
       f4 = f3; f3 = f2;
       b4 = b3; b3 = b2;
@@ -395,6 +402,7 @@ Real general_section_search ( const Vector &A,
 
       if(fm > f2) fm = f2, bm = b2;
     }
+    if(fabs(fbound-fm)/(fbound+fm) < 0.5*1e-6) break;
   }  
 
   delete x1; delete x2; delete x3; delete x4;

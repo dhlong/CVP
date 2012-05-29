@@ -50,9 +50,6 @@ int main(int argc, char* argv[]){
     format = TNTP;
   
   MultiCommoNetwork net(inputname.c_str(), format);
-  
-  cout<<"Generating pajek"<<endl;
-  net.write_pajek(pajekname.c_str());
   tic2 = timer.elapsed();
   
   cout<<"Modelling"<<endl;

@@ -91,6 +91,7 @@ bool read_param(string fininame, const string &alias, T &t){
   fstream f(fininame.c_str(), fstream::in);
   char line[305], *str;
 
+  if(!f) error_handle("No CVP.ini file found.");
   while(!f.eof()){
     f.getline(line, 300);
     str = strrchr(line,'#'); // comments are marked by '#' character
