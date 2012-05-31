@@ -86,6 +86,13 @@ template <typename T> inline bool updatemax(T &a, T b){
   return false;
 }
 
+// report error message and terminate the program 
+inline void error_handle(const char* message){
+  cout<<message<<endl;
+  cout<<"Terminating the program"<<endl;
+  exit(1);
+}
+
 template<typename T>
 bool read_param(string fininame, const string &alias, T &t){
   fstream f(fininame.c_str(), fstream::in);
@@ -108,13 +115,6 @@ bool read_param(string fininame, const string &alias, T &t){
 
   f.close();
   return false;
-}
-
-// report error message and terminate the program 
-inline void error_handle(const char* message){
-  cout<<message<<endl;
-  cout<<"Terminating the program"<<endl;
-  exit(1);
 }
 
 /**

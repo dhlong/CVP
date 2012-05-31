@@ -24,7 +24,6 @@ class CVP{
   void default_settings();
   
   // ILOG objects
-  IloModel *proxy; // pointer to the proxy model
   IloObjective *proxy_obj; // pointer to the proxy objective
   IloCplex *cplex; // pointer to the cplex (CPLEX solver)
 
@@ -57,6 +56,7 @@ class CVP{
   IloEnv env; // ILOG environment
   IloNumVarArray variables; // set of all variables
   IloRangeArray constraints; // set of all constraints
+  IloModel *proxy; // pointer to the proxy model
 
   virtual IloObjective initial_proxy_obj(); 
   virtual Vector initial_solution();
@@ -104,26 +104,42 @@ public:
 // redefine the initial_proxy_obj() and initial_solution()
 // adding function to generate constraints from network structure
 class CVP_MCNF : public CVP{
-private:
-  MultiCommoNetwork net;
-  void generate_network_constraints();
-
 protected:
+  MultiCommoNetwork net;
+  virtual void generate_network_constraints();
   virtual IloObjective initial_proxy_obj();
   virtual Vector initial_solution();
 
 public:
-  CVP_MCNF(Function *obj_, MultiCommoNetwork net_);
+  CVP_MCNF(Function *obj_, const MultiCommoNetwork &net_);
   Vector solvelinear();
-  Vector solve_by_dijkstra();
-  Vector solve_by_dijkstra_and_SOCP();
+  virtual Vector solve_by_dijkstra();
+  virtual Vector solve_by_dijkstra_and_SOCP();
 
   virtual Vector optimize();
 };
 
 Vector solve_by_dijkstra_only(const MultiCommoNetwork&, Function*, int);
 
+// CVP_MCNF_KL is a CVP class designed for multi-commodity network optimisation
+// with Klienrock objective function
+// inherited from CVP_MCNF class
+// redefine solve_by_dijkstra_and_SOCP() and generate_network_constraints()
+// adding function to generate constraints from network structure
+class CVP_MCNF_KL : public CVP_MCNF{
+protected:
+  IloRangeArray capconstraints;
+  virtual void generate_network_constraints();
+
+public:
+  CVP_MCNF_KL(const MultiCommoNetwork &n);
+  virtual Vector solve_by_dijkstra_and_SOCP();
+};
+
+Vector solve_by_dijkstra_only(const MultiCommoNetwork&, Function*, int);
+
 #endif
+
 
 
 

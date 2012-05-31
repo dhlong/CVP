@@ -1,5 +1,7 @@
 #include "function.h"
 
+//#define INFINITY 1e200
+
 QuarticFunction::QuarticFunction(const Network &n) : 
   net(n), to(n.getNVertex()) {
   FOR(i,n.arcs.size()) to[net.arcs[i].head].push_back(i);
@@ -179,11 +181,9 @@ Real KleinrockFunction::f(const Vector &x) const{
     ya = 0.0;
     FOR(i, K) ya += x[a*K + i];
     ca = net.arcs[a].cap;
-    if(ca-ya<=0){
-      cout<<"Error: ca-ya = "<<ca-ya<<endl;
-      exit(1);
-    }
-    sum += ya/(ca-ya);
+    //assert(ca>ya);
+    if(ca>ya) sum += ya/(ca-ya);
+    else return INFINITY;
   }
   return sum;
 }
@@ -196,9 +196,10 @@ Vector KleinrockFunction::g(const Vector &x) const{
   FOR(a, A){
     ya = 0.0; ca = net.arcs[a].cap;
     FOR(i, K) ya += x[a*K + i];
-    assert(ca-ya>0);
+    //assert(ca-ya>0);
     dd = ca - ya;
-    dd = ca/(dd*dd);
+    if(dd > 0) dd = ca/(dd*dd);
+    else dd = INFINITY;
     FOR(i,K) d[a*K + i] = dd;
   }
   return d;
@@ -225,8 +226,9 @@ Vector KleinrockFunction::gg(const Vector &x) const{
     ya = 0.0; ca = net.arcs[a].cap;
     FOR(i, K) ya += x[a*K + i];
     dd = ca - ya;
-    assert(ca-ya>0);
-    dd = 2*ca/(dd*dd*dd);
+    //assert(ca-ya>0);
+    if(ca-ya>0) dd = 2*ca/(dd*dd*dd);
+    else dd = INFINITY;
     FOR(i,K) d[a*K + i] = dd;
   }
   return d;
@@ -256,9 +258,10 @@ Vector ReducedKleinrockFunction::g(const Vector &x) const{
   Real ya, ca, dd;
   FOR(a, A){
     ya = x[a]; ca = net.arcs[a].cap;
-    assert(ca-ya>0);
+    //assert(ca-ya>0);
     dd = ca - ya;
-    dd = ca/(dd*dd);
+    if(dd>0) dd = ca/(dd*dd);
+    else dd = INFINITY;
     d[a] = dd;
   }
   return d;
@@ -271,9 +274,10 @@ Vector ReducedKleinrockFunction::gg(const Vector &x) const{
   Real ya, ca, dd;
   FOR(a, A){
     ya = x[a]; ca = net.arcs[a].cap;
-    assert(ca-ya>0);
+    //assert(ca-ya>0);
     dd = ca - ya;
-    dd = 2*ca/(dd*dd*dd);
+    if(dd>0) dd = 2*ca/(dd*dd*dd);
+    else dd = INFINITY;
     d[a] = dd;
   }
   return d;

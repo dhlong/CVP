@@ -194,7 +194,7 @@ Vector CVP::solve(const IloObjective &iloobj){
   if (cplex == NULL) cplex = new IloCplex(*proxy);
   tic4 = timer.elapsed();
 
-  //cplex->setParam(IloCplex::PopulateLim, 0);
+  cplex->setParam(IloCplex::Threads, 1);
 
   // solve
   if(!cplex->solve()) {
@@ -464,7 +464,7 @@ Vector CVP_NF::solvequad(){
 //////////////////////////////////////////////////////////////
 
 // constructor
-CVP_MCNF::CVP_MCNF(Function *obj_, MultiCommoNetwork net_)
+CVP_MCNF::CVP_MCNF(Function *obj_, const MultiCommoNetwork &net_)
   : CVP(obj_), net(net_) {
 }
 
@@ -473,7 +473,7 @@ Vector CVP_MCNF::optimize(){
     env.end();
     return solve_by_dijkstra();
   }
-  generate_network_constraints();  
+  this->generate_network_constraints();  
   if (!to_do_shortest_path) return phase2();
   return solve_by_dijkstra_and_SOCP();  
 }
@@ -534,7 +534,9 @@ IloObjective CVP_MCNF::initial_proxy_obj(){
   IloExpr expr(env);
   assert(variables.getSize() == K*A);
   FOR(a, A) FOR(i, K) expr += (net.arcs[a].cost * variables[a*K + i]);
-  return IloMinimize(env, expr);
+  IloObjective iloobj(IloMinimize(env, expr));
+  expr.end();
+  return iloobj;
 }
 
 // redefine the initial solution to be the combination of solutions 
@@ -674,29 +676,13 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
       FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a*K]));
       DA.get_flows(sp);
 
-      ////check gradient
-      //Vector gsp, dx(sp); dx -= x1;
-      //Real gxdx = (dx*g);
-      
       ////old tau
       //if (taustar <=0) taubound = 1;
       //else taubound = taustar * 4;
       //if (taubound >= 1) taubound = 1;
       //else sp -= x1, sp *= taubound, sp += x1; // dx *= taubound;
 
-      //// check gradient
-      /*
-      FOR(i, 20) {
-	gsp = obj->g(sp);
-	if((gsp*dx)*gxdx<0) break;
-	taubound *= 2;
-	sp += dx;
-	dx *= 2.0;
-      }
-      */
-
       ////new tau
-      //iteration_report << taubound<<endl;
       //taustar = section_search ( x1, sp, obj, 
       //line_search_iterations,
       //false, taubound*(1-PHI), taubound*PHI);
@@ -761,37 +747,287 @@ Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int i
 		   << endl;
   FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
   
-  // Loops
+  // If obj is reducable, a more efficient algorithm is used
+  ReducableFunction *cobj = dynamic_cast<ReducableFunction*>(obj);
+  Function * robj = NULL;
+  Vector y;
+  Real tau;
+  if(cobj) robj = cobj->reduced_function(), y = cobj->reduced_variable(x);
+
   FOR(iteration, iterations) {
     cout<<"Iteration "<<iteration<<endl;
     tic1 = timer.elapsed();
-
-    Vector g(obj->g(x));
-    FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a*K]));
-    DA.get_flows(sp);
+    
+    if(cobj){
+      Vector g(robj->g(y));
+      FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a]));
+      DA.get_flows(sp);
+      Vector ysp(cobj->reduced_variable(sp));
       
-    tic2 = timer.elapsed();
+      tic2 = timer.elapsed();
       
-    Real tau = section_search(x, sp, obj);
-    x -= sp; x *= (1-tau); x += sp;
-
-    tic3 = timer.elapsed();
-  
+      if(4*tau >= 1.0) tau = section_search(y, ysp, robj);
+      else tau = section_search(y, ysp, robj, 20, 4*tau*(1-PHI), 4*tau*PHI);
+      x -= sp;  x *= (1-tau); x += sp;
+      y -= ysp; y *= (1-tau); y += ysp;
+    }
+    else{
+      Vector g(obj->g(x));
+      FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(g[a*K]));
+      DA.get_flows(sp);
+      
+      tic2 = timer.elapsed();
+      
+      if(4*tau >= 1.0) tau = section_search(x, sp, robj);
+      else tau = section_search(x, sp, obj, 20, 4*tau*(1-PHI), 4*tau*PHI);
+      x -= sp; x *= (1-tau); x += sp;
+    }
+      
     // Timing and Reporting
     if(iteration%50 == 0)
-      iteration_report << left << setw(5)  << iteration
-		       << right << setw(8) << setprecision(4) << fixed << tic3-tic1
-		       << right << setw(8) << setprecision(4) << fixed << tic2-tic1
-		       << right << setw(8) << setprecision(4) << fixed << tic3-tic2
-		       << right << setw(8) << setprecision(4) << fixed << tau
+      iteration_report << left  << setw(5)  << iteration
+		       << right << setw(8)  << setprecision(4)  << fixed      << tic3-tic1
+		       << right << setw(8)  << setprecision(4)  << fixed      << tic2-tic1
+		       << right << setw(8)  << setprecision(4)  << fixed      << tic3-tic2
+		       << right << setw(8)  << setprecision(4)  << fixed      << tau
 		       << right << setw(20) << setprecision(10) << scientific << obj->f(x)
-		       << right << setw(12) << setprecision(3) << fixed << timer.elapsed()-start
+		       << right << setw(12) << setprecision(3)  << fixed      << timer.elapsed()-start
 		       << endl;
   }
+  
+  if(robj) delete robj;
   
   // Reporting final results
   FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
   iteration_report<<"Optimal objective: "<<scientific<<setprecision(12)<<obj->f(x)<<endl;
-
   return x;  
+}
+
+
+CVP_MCNF_KL::CVP_MCNF_KL(const MultiCommoNetwork &n): 
+  CVP_MCNF((Function *) new KleinrockFunction(n), n),
+  capconstraints(env)
+{
+}
+
+void CVP_MCNF_KL::generate_network_constraints(){
+  int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
+  IloExprArray node(env);
+  FOR(i, K) FOR(n, V) node.add(IloExpr(env));
+
+  FOR(a,A){
+    IloExpr sum(env);
+    FOR(i, K){
+      // Name the variable
+      stringstream ssname;
+      ssname<<"flow["<<i<<","<<net.arcs[a].head<<">"<<net.arcs[a].tail<<"]";
+
+      // Add the variable to the set of variables
+      variables.add(IloNumVar(env, 0.0, IloInfinity, ssname.str().c_str()));
+      sum += variables[a*K + i];
+    }
+
+    FOR(i, K){
+      // Update flow equation for each commodity at each arc with the new var
+      node[i*V + net.arcs[a].head] -= variables[a*K + i];
+      node[i*V + net.arcs[a].tail] += variables[a*K + i];
+    }
+    
+    // Capacity constraints
+    capconstraints.add(sum <= net.arcs[a].cap*0.9999);
+  }
+
+  // Generate flow constraints and add them to the constraint set
+  FOR(i,K) FOR(n, V){
+    if(n == net.commoflows[i].origin)
+      constraints.add(node[i*V + n] == - net.commoflows[i].demand);
+    else if(n == net.commoflows[i].destination)
+      constraints.add(node[i*V + n] == + net.commoflows[i].demand);
+    else
+      constraints.add(node[i*V + n] == 0);
+  }
+  
+  // Reporting problem size to the iteration report
+  iteration_report << endl << "Problem size:"<<endl;
+  iteration_report << "\tNumber of network nodes  = "<<setw(10)<<right<<net.getNVertex()<<endl;
+  iteration_report << "\tNumber of network arcs   = "<<setw(10)<<right<<net.arcs.size()<<endl;
+  iteration_report << "\tNumber of commodities    = "<<setw(10)<<right<<net.commoflows.size()<<endl;
+  iteration_report << "\tNumber of variables      = "<<setw(10)<<right<<variables.getSize()<<endl;
+  iteration_report << "\tNumber of constraints    = "<<setw(10)<<right<<constraints.getSize()<<endl;
+  iteration_report << endl;
+}
+
+
+Vector CVP_MCNF_KL::solve_by_dijkstra_and_SOCP(){
+  int count = 0, iteration = 0;
+  int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
+  Timer timer;
+  Real tic1, tic2, tic3, tic4, start = timer.elapsed();
+  bool exit_flag = false;
+
+  KleinrockFunction *kl = dynamic_cast<KleinrockFunction*>(obj); assert(kl!=NULL);
+  Function *rkl = kl->reduced_function();
+
+  ShortestPathOracle DA(net);
+  tic1 = timer.elapsed();
+
+  // Initialisation by solving the intial network shortest paths
+  constraints.add(capconstraints);
+  Vector x1 = solve(this->initial_proxy_obj()), x0(A*K), sp(A*K);
+  proxy->remove(capconstraints);
+  Real f0, f1 = obj->f(x1); 
+  Real beta = initial_beta * sqrt(x1*x1);
+  
+  // Timing and Reporting
+  tic2 = timer.elapsed();
+  iteration_report<<"Initialisation: time = "<<tic2-tic1<<"s; obj = "<<f1<<endl;
+  tic1 = timer.elapsed();
+
+  // header row of the iteration report
+  int output_row_width = 130;
+  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
+  iteration_report << left << setw(4)  << "Iter"
+		   << right << setw(7) << "#solve"
+		   << right << setw(8) << "t_total"
+		   << right << setw(12) << "beta"
+		   << right << setw(5) << "ls?"
+		   << right << setw(8) << "lambda*"
+		   << right << setw(8) << "tau*0"
+		   << right << setw(8) << "tau*n"
+		   << right << setw(8) << "t_SP"
+		   << right << setw(20) << "obj_ls"
+		   << right << setw(20) << "obj_final"
+		   << right << setw(10) << "cosine"
+		   << right << setw(12) << "t_elapsed"
+		   <<endl;
+  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
+  
+  // Loops
+  Vector g, z;
+  Real taubound = -1, taustar = 0.5/5;
+  while(!exit_flag) {
+    cout<<"Mark 0"<<endl;
+
+    if(to_reset_beta) beta = initial_beta * sqrt(x1*x1);
+
+    // Timing and Reporting
+    iteration ++; count = 0; tic1 = timer.elapsed();
+
+    // Previous best solution
+    x0 = x1; f0 = f1;
+    
+    // normalized gradient
+    g = obj->g(x0);
+    g *= (1.0/sqrt(g*g));
+
+    // reduce beta and do projection until feasible and improvement
+    for(;;) {
+      z = g; z *= (-beta); z += x0; // z = x0 - beta*g
+      x1 = solve(quad_proxy_obj(z));
+      count++; // counting number of solves (for reporting)
+
+      bool feasible = true;
+      Vector y1(kl->reduced_variable(x1));
+      FOR(a, A) if (y1[a] >= net.arcs[a].cap){
+	feasible = false;
+	break;
+      }
+
+      if(feasible){
+	FOR(a, A) assert(y1[a]<net.arcs[a].cap);
+	cout<<"Mark 0.1"<<endl;
+
+	f1 = rkl->f(y1);
+	if(f1<f0) break;
+      }
+      beta *= beta_down_factor;
+    }
+
+    cout<<"Mark 1"<<endl;
+    // Optimality check
+    g = obj->g(x1); // g is now gradient at x1
+    z -= x1;        // z is now z - x1
+    Real cosine = 1 + (z*g)/sqrt((z*z)*(g*g));
+    exit_flag = cosine  <= optimality_epsilon; 
+    
+    tic2 = timer.elapsed(); // for timing
+
+    cout<<"Mark 2"<<endl;
+    // Line Search
+    Real lambda = 1.0;
+    bool do_line_search = to_line_search && ((x0-x1)*g<0);
+    if(do_line_search){
+      if(to_golden_search) 
+	lambda = section_search(x0, x1, obj, line_search_iterations);
+      else lambda = line_search(x0, x1, obj, line_search_iterations);
+      x1 -= x0; x1 *= lambda; x1 += x0; // x1 = x0 + betamin*(x1-x0)
+      FOR(a, A){
+	Real ya = 0.0;
+	FOR(k, K) ya += x1[a*K+k];
+	assert(ya<net.arcs[a].cap);
+      }
+      f1 = obj->f(x1);
+    }
+    
+    tic3 = timer.elapsed(); // for timing
+    
+    Real f_ls = f1, fsp, taustar0 = 0.0; // for reporting
+
+    cout<<"Mark 3"<<endl;
+    Vector y1(kl->reduced_variable(x1));
+    FOR(iter, SP_iterations_per_SOCP) {
+      Vector gy(rkl->g(y1));
+      FOR(a, A) DA.set_cost(net.arcs[a].head, net.arcs[a].tail, cost_t(gy[a]));
+      DA.get_flows(sp);
+      Vector ysp(kl->reduced_variable(sp));
+
+      // feasibility search
+      Real alpha = 1.0;
+      FOR(a, A) if(ysp[a] > y1[a]) updatemin(alpha, (net.arcs[a].cap*0.9999 - y1[a])/(ysp[a]-y1[a]));
+      assert(alpha>0.0); // Hopefully we can find a new feasible solution
+      sp  -= x1; sp  *= alpha; sp  += x1;
+      ysp -= y1; ysp *= alpha; ysp += y1;
+      
+      taustar = section_search ( y1, ysp, rkl, line_search_iterations);
+      x1 -= sp;  x1 *= (1-taustar); x1 += sp; 
+      y1 -= ysp; y1 *= (1-taustar); y1 += ysp; 
+      FOR(a, A) assert(y1[a]<net.arcs[a].cap);
+      f1 = rkl->f(y1);
+
+      if(iter == 0) taustar0 = taustar; // for reporting
+    }
+    
+    FOR(a, A){
+      Real ya = 0.0;
+      FOR(k, K) ya += x1[a*K+k];
+      assert(ya<net.arcs[a].cap);
+    }
+    cout<<"Mark 4"<<endl;
+    f1 = obj->f(x1);
+    cout<<"Mark 5"<<endl;
+
+    // Timing and Reporting
+    tic4 = timer.elapsed();
+    iteration_report << left  << setw(4)  << iteration
+		     << right << setw(7)  << count
+		     << right << setw(8)  << setprecision(3) << fixed << tic4-tic1
+		     << right << setw(12) << setprecision(2) << fixed << beta
+		     << right << setw(5)  << setprecision(3) << (do_line_search?"YES":"NO")
+		     << right << setw(8)  << setprecision(5) << fixed << lambda
+		     << right << setw(8)  << setprecision(5) << fixed << taustar0
+		     << right << setw(8)  << setprecision(5) << fixed << taustar
+		     << right << setw(8)  << setprecision(3) << fixed << tic4 - tic3
+		     << right << setw(20) << setprecision(10) << scientific << f_ls
+		     << right << setw(20) << setprecision(10) << scientific << f1 
+		     << right << setw(10) << setprecision(1) << scientific << cosine
+		     << right << setw(12) << setprecision(3) << fixed << timer.elapsed()-start
+		     << endl;
+    if(taustar == 0.0) taustar = 1.0; 
+  }
+  
+  // Reporting final results
+  FOR(i,output_row_width) iteration_report<<"-"; iteration_report<<endl;
+  iteration_report<<"Optimal objective: "<<scientific<<setprecision(12)<<obj->f(x1)<<endl;
+
+  return x1;
 }

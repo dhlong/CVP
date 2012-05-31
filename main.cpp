@@ -53,8 +53,8 @@ int main(int argc, char* argv[]){
   tic2 = timer.elapsed();
   
   cout<<"Modelling"<<endl;
-  CVP_MCNF *aCVP =  new CVP_MCNF(new BPRFunction(net), net);
-  //CVP_MCNF *aCVP =  new CVP_MCNF(new KleinrockFunction(net), net);
+  //CVP_MCNF *aCVP =  new CVP_MCNF(new BPRFunction(net), net);
+  CVP_MCNF_KL *aCVP =  new CVP_MCNF_KL(net);
 
   fstream fini("CVP.ini", fstream::in);
   aCVP->read_settings(fini);
