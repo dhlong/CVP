@@ -1,6 +1,10 @@
 #ifndef __DIJKSTRA_H__
 #define __DIJKSTRA_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef short vertex_t;
 typedef short arc_t;
 typedef float cost_t;
@@ -25,6 +29,10 @@ void dijkstra ( AdjacentList adjl,
 		index_t *pos,
 		cost_t *d,
 		vertex_t *trace);
+
+#ifdef __cplusplus
+}
+#endif
 
 		
 #endif

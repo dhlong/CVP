@@ -11,6 +11,7 @@ LIBFORMAT  = static_pic
 
 CPLEXDIR      = /app1/ia32-64/iLog/cplex101
 CONCERTDIR    = /app1/ia32-64/iLog/concert23
+EIGENDIR      = /home/svu/isedhl/eigen-eigen-6e7488e20373
 # ---------------------------------------------------------------------
 # Compiler selection 
 # ---------------------------------------------------------------------
@@ -35,7 +36,7 @@ CPLEXINCDIR   = $(CPLEXDIR)/include
 
 CCLNFLAGS = -L$(CPLEXLIBDIR) -lilocplex -lcplex -L$(CONCERTLIBDIR) -lconcert -lm -lpthread 
 
-CCFLAGS = $(CCOPT) -I$(CPLEXINCDIR) -I$(CONCERTINCDIR) 
+CCFLAGS = $(CCOPT) -I$(CPLEXINCDIR) -I$(CONCERTINCDIR) -I$(EIGENDIR)
 
 all: CVP
 

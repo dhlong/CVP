@@ -78,6 +78,10 @@ class ShortestPathOracle{
   ShortestPathOracle(const MultiCommoNetwork &n);
   ~ShortestPathOracle();
 
+  void reset_cost(){
+    FOR(a, A) adjl.costs[a] = cost_t(0.0);
+  }
+
   void set_cost(vertex_t u, vertex_t v, cost_t c){
     arc_t a = indexadjl[u][v];
     if(a>=0) adjl.costs[a] = c;

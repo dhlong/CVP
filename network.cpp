@@ -281,17 +281,21 @@ void ShortestPathOracle::solve(){
 }
 
 void ShortestPathOracle::get_flows(Vector &sp) {
-  if(sp.size() != K*A) sp = Vector(K*A, 0.0);
-  else FOR(i, sp.size()) sp[i] = 0.0;
-
+  sp = Vector(K*A);
+  vector< pair<arc_t, int> > paths;
   if(!has_solved) solve();
 
   FOR(k, K){
     int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
     Real demand = net.commoflows[k].demand;
-    while(v>=0 && v!=u) {
-      sp[ indexarcl [trace[u][v]] [v] * K + k] = demand;
+    while(v>=0 && v!=u){
+      paths.push_back(make_pair(indexarcl [trace[u][v]] [v], k));
       v = trace[u][v];
     }
   }
+
+  sort(paths.begin(), paths.end());
+  FOR(i, paths.size()) 
+    sp.coeffRef(paths[i].first*K + paths[i].second) 
+    = net.commoflows[paths[i].second].demand;
 }

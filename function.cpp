@@ -16,20 +16,20 @@ Real QuarticFunction::f(const Vector &v) const{
   FOR(i, v.size()){
     FOR(j, to[net.arcs[i].tail].size()){
       arc = to[net.arcs[i].tail][j];
-      x = (v[arc]/net.arcs[arc].cap);
+      x = (v.coeff(arc)/net.arcs[arc].cap);
       sum += 20*x*x*x*x;
     }
-    x = (v[i]/net.arcs[i].cap);
+    x = (v.coeff(i)/net.arcs[i].cap);
     sum += 100*x*x;
     
     c = Real(net.arcs[i].head+1.0)/Real(net.arcs[i].tail+1.0);
-    sum += c*v[i];
+    sum += c*v.coeff(i);
   }
   return sum;
 }
 
 Vector QuarticFunction::g(const Vector &v) const{
-  Vector d(v.size(),0.0);
+  Vector d(v.size());
   Real x, c, sum;
   int a;
 
@@ -37,15 +37,15 @@ Vector QuarticFunction::g(const Vector &v) const{
     sum = 0;
     FOR(j, to[net.arcs[i].tail].size()){
       a = to[net.arcs[i].tail][j];
-      x = v[a]; c = net.arcs[a].cap;
-      d[a] += 80*x*x*x/(c*c*c*c);
+      x = v.coeff(a); c = net.arcs[a].cap;
+      d.coeffRef(a) += 80*x*x*x/(c*c*c*c);
     }
 
-    x = v[i]; c = net.arcs[i].cap;
-    d[i] += 200*x/(c*c);
+    x = v.coeff(i); c = net.arcs[i].cap;
+    d.coeffRef(i) += 200*x/(c*c);
 
     c = Real(net.arcs[i].head+1.0)/Real(net.arcs[i].tail+1.0);
-    d[i] += c;
+    d.coeffRef(i) += c;
   }
   return d;
 }
@@ -53,7 +53,7 @@ Vector QuarticFunction::g(const Vector &v) const{
 //!!!! have not debugged
 // do not use yet
 Vector QuarticFunction::gg(const Vector &v) const{
-  Vector d(v.size(),0.0);
+  Vector d(v.size());
   Real x, c, sum;
   int a;
 
@@ -61,15 +61,15 @@ Vector QuarticFunction::gg(const Vector &v) const{
     sum = 0;
     FOR(j, to[net.arcs[i].tail].size()){
       a = to[net.arcs[i].tail][j];
-      x = v[a]; c = net.arcs[a].cap;
-      d[a] += 240*x*x/(c*c*c*c);
+      x = v.coeff(a); c = net.arcs[a].cap;
+      d.coeffRef(a) += 240*x*x/(c*c*c*c);
     }
 
-    x = v[i]; c = net.arcs[i].cap;
-    d[i] += 200/(c*c);
+    x = v.coeff(i); c = net.arcs[i].cap;
+    d.coeffRef(i) += 200/(c*c);
 
     c = Real(net.arcs[i].head+1.0)/Real(net.arcs[i].tail+1.0);
-    d[i] += c;
+    d.coeffRef(i) += c;
   }
   return d;
 }
@@ -81,11 +81,13 @@ Real BPRFunction::f(const Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
   Real sum = 0.0, ya, ca, ta;
-  FOR(a, A){
-    ya = 0.0;
-    FOR(i, K) ya += x[a*K + i];
+  Vector::InnerIterator itx(x);
+  while(itx){
+    int a = itx.index() / K;
     ca = net.arcs[a].cap;
     ta = net.arcs[a].cost;
+    ya = 0.0;
+    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
     sum += ta*ya*(1 + alpha/(beta+1)*pow(ya/ca,beta));
   }
   return sum;
@@ -98,9 +100,15 @@ Function* BPRFunction::reduced_function() const {
 Vector BPRFunction::reduced_variable(const Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size());
-  Vector reduced_x (A, 0.0);
-  FOR(a, A) FOR(k, K) reduced_x[a] += x[a*K + k];
-  return reduced_x;
+  Vector y(A);
+  Vector::InnerIterator itx(x);
+  while(itx){
+    int a = itx.index()/K;
+    Real ya = 0.0;
+    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
+    y.coeffRef(a) = ya;
+  }
+  return y;
 }
 
 Vector BPRFunction::g(const Vector &x) const {
@@ -108,11 +116,16 @@ Vector BPRFunction::g(const Vector &x) const {
   assert(K*A == x.size()); // debug
   Vector d(K*A);
   Real ya, ca, dd, ta;
-  FOR(a, A){
-    ya = 0.0; ca = net.arcs[a].cap; ta = net.arcs[a].cost;
-    FOR(i, K) ya += x[a*K + i];
-    dd = ta + ta*alpha*pow(ya/ca,beta);
-    FOR(i,K) d[a*K + i] = dd;
+  Vector::InnerIterator itx(x);
+  FOR(i, K*A) d.insert(i) = net.arcs[i/K].cost;
+  while(itx){
+    int a = itx.index() / K;
+    ca = net.arcs[a].cap;
+    ta = net.arcs[a].cost;
+    ya = 0.0;
+    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
+    dd = ta*alpha*pow(ya/ca,beta);
+    FOR(k, K) d.coeffRef(a*K+k) += dd;
   }
   return d;
 }
@@ -122,12 +135,15 @@ Vector BPRFunction::gg(const Vector &x) const {
   assert(K*A == x.size()); // debug
   Vector d(K*A);
   Real ya, ca, dd, ta;
-  FOR(a, A){
-    ya = 0.0; ca = net.arcs[a].cap; ta = net.arcs[a].cost;
-    FOR(i, K) ya += x[a*K + i];
-    assert(ca>0.0);
+  Vector::InnerIterator itx(x);
+  while(itx){
+    int a = itx.index() / K;
+    ca = net.arcs[a].cap;
+    ta = net.arcs[a].cost;
+    ya = 0.0;
+    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
     dd = ta*alpha*beta*pow(ya/ca,beta-1)/ca;
-    FOR(i,K) d[a*K + i] = dd;
+    if(fabs(dd)>1e-7) FOR(k, K) d.insert(a*K+k) = dd;
   }
   return d;
 }
@@ -139,8 +155,9 @@ Real ReducedBPRFunction::f(const Vector &x) const {
   int A = net.arcs.size();
   assert(A == x.size()); // debug
   Real sum = 0.0, ya, ca, ta;
-  FOR(a, A){
-    ya = x[a];
+  ITER(x, itx) {
+    int a = itx.index();
+    ya = itx.value();
     ca = net.arcs[a].cap;
     ta = net.arcs[a].cost;
     sum += ta*ya*(1 + alpha/(beta+1)*pow(ya/ca,beta));
@@ -153,9 +170,13 @@ Vector ReducedBPRFunction::g(const Vector &x) const {
   assert(A == x.size()); // debug
   Vector d(A);
   Real ya, ca, ta;
-  FOR(a, A){
-    ya = x[a]; ca = net.arcs[a].cap; ta = net.arcs[a].cost;
-    d[a] = ta + ta*alpha*pow(ya/ca,beta);
+  FOR(a, A) d.insert(a) =  net.arcs[a].cost;
+  ITER(x, itx){
+    int a = itx.index();
+    ya = itx.value(); 
+    ca = net.arcs[a].cap; 
+    ta = net.arcs[a].cost;
+    d.coeffRef(a) += ta*alpha*pow(ya/ca,beta);
   }
   return d;
 }
@@ -165,10 +186,11 @@ Vector ReducedBPRFunction::gg(const Vector &x) const {
   assert(A == x.size()); // debug
   Vector d(A);
   Real ya, ca, ta;
-  FOR(a, A){
-    ya = x[a]; ca = net.arcs[a].cap; ta = net.arcs[a].cost;
+  ITER(x, itx) {
+    int a = itx.index();
+    ya = itx.value(); ca = net.arcs[a].cap; ta = net.arcs[a].cost;
     assert(ca>0.0);
-    d[a] = ta*alpha*beta*pow(ya/ca,beta-1)/ca;
+    d.insert(a) = ta*alpha*beta*pow(ya/ca,beta-1)/ca;
   }
   return d;
 }
@@ -177,11 +199,12 @@ Real KleinrockFunction::f(const Vector &x) const{
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
   Real sum = 0.0, ya, ca;
-  FOR(a, A){
-    ya = 0.0;
-    FOR(i, K) ya += x[a*K + i];
+  Vector::InnerIterator itx(x);
+  while(itx){
+    int a = itx.index() / K;
     ca = net.arcs[a].cap;
-    //assert(ca>ya);
+    ya = 0.0;
+    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
     if(ca>ya) sum += ya/(ca-ya);
     else return INFINITY;
   }
@@ -193,14 +216,16 @@ Vector KleinrockFunction::g(const Vector &x) const{
   assert(K*A == x.size()); // debug
   Vector d(K*A);
   Real ya, ca, dd;
-  FOR(a, A){
-    ya = 0.0; ca = net.arcs[a].cap;
-    FOR(i, K) ya += x[a*K + i];
-    //assert(ca-ya>0);
+  Vector::InnerIterator itx(x);
+  while(itx){
+    int a = itx.index() / K;
+    ca = net.arcs[a].cap;
+    ya = 0.0;
+    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
     dd = ca - ya;
     if(dd > 0) dd = ca/(dd*dd);
     else dd = INFINITY;
-    FOR(i,K) d[a*K + i] = dd;
+    FOR(k,K) d.insert(a*K + k) = dd;
   }
   return d;
 }
@@ -212,9 +237,15 @@ Function* KleinrockFunction::reduced_function() const {
 Vector KleinrockFunction::reduced_variable(const Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size());
-  Vector reduced_x (A, 0.0);
-  FOR(a, A) FOR(k, K) reduced_x[a] += x[a*K + k];
-  return reduced_x;
+  Vector y (A);
+  Vector::InnerIterator itx(x);
+  while(itx){
+    int a = itx.index()/K;
+    Real ya = 0.0;
+    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
+    y.insert(a) = ya;
+  }
+  return y;
 }
 
 Vector KleinrockFunction::gg(const Vector &x) const{
@@ -222,14 +253,16 @@ Vector KleinrockFunction::gg(const Vector &x) const{
   assert(K*A == x.size()); // debug
   Vector d(K*A);
   Real ya, ca, dd;
-  FOR(a, A){
+  Vector::InnerIterator itx(x);
+  while(itx){
+    int a = itx.index()/K;
     ya = 0.0; ca = net.arcs[a].cap;
-    FOR(i, K) ya += x[a*K + i];
+    do ya += itx.value(), ++itx; while(itx && itx.index()/K==a);
     dd = ca - ya;
     //assert(ca-ya>0);
     if(ca-ya>0) dd = 2*ca/(dd*dd*dd);
     else dd = INFINITY;
-    FOR(i,K) d[a*K + i] = dd;
+    FOR(k,K) d.insert(a*K + k) = dd;
   }
   return d;
 }
@@ -242,11 +275,12 @@ Real ReducedKleinrockFunction::f(const Vector &x) const {
   int A = net.arcs.size();
   assert(A == x.size()); // debug
   Real sum = 0.0, ya, ca;
-  FOR(a, A){
-    ya = x[a];
+  ITER(x, itx){
+    int a = itx.index();
+    ya = itx.value();
     ca = net.arcs[a].cap;
-    assert(ca-ya>0);
-    sum += ya/(ca-ya);
+    //assert(ca-ya>0);
+    if(ca>ya) sum += ya/(ca-ya); else return INFINITY;
   }
   return sum;
 }
@@ -256,13 +290,14 @@ Vector ReducedKleinrockFunction::g(const Vector &x) const{
   assert(A == x.size()); // debug
   Vector d(A);
   Real ya, ca, dd;
-  FOR(a, A){
-    ya = x[a]; ca = net.arcs[a].cap;
+  ITER(x, itx){
+    int a = itx.index();
+    ya = itx.value(); ca = net.arcs[a].cap;
     //assert(ca-ya>0);
     dd = ca - ya;
     if(dd>0) dd = ca/(dd*dd);
     else dd = INFINITY;
-    d[a] = dd;
+    d.insert(a) = dd;
   }
   return d;
 }
@@ -272,13 +307,14 @@ Vector ReducedKleinrockFunction::gg(const Vector &x) const{
   assert(A == x.size()); // debug
   Vector d(A);
   Real ya, ca, dd;
-  FOR(a, A){
-    ya = x[a]; ca = net.arcs[a].cap;
+  ITER(x, itx){
+    int a = itx.index();
+    ya = itx.value(); ca = net.arcs[a].cap;
     //assert(ca-ya>0);
     dd = ca - ya;
     if(dd>0) dd = 2*ca/(dd*dd*dd);
     else dd = INFINITY;
-    d[a] = dd;
+    d.insert(a) = dd;
   }
   return d;
 }
