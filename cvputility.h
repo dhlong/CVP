@@ -50,8 +50,8 @@ class TableReport {
 
  public:
   TableReport(const string &format);
-  ostream& print_header(ostream &f, ...);
-  ostream& print_row(ostream &f, ...);
+  ostream& print_header(ostream *f, ...);
+  ostream& print_row(ostream *f, ...);
   ostream& print_line(ostream &f);
 };
 

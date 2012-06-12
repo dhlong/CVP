@@ -36,7 +36,7 @@ TableReport::TableReport(const string &format) {
   }
 }
 
-ostream& TableReport::print_header(ostream &f, ...){
+ostream& TableReport::print_header(ostream *f, ...){
   char header[300];
   va_list args;
   va_start(args, f);
@@ -45,20 +45,20 @@ ostream& TableReport::print_header(ostream &f, ...){
   line = "";
   FOR(i, strlen(header)) line += "-"; 
   
-  f<<line<<endl<<header<<endl<<line<<endl;
+  (*f)<<line<<endl<<header<<endl<<line<<endl;
   
   va_end(args);
-  return f;
+  return *f;
 }
 
-ostream& TableReport::print_row(ostream &f, ...){
+ostream& TableReport::print_row(ostream *f, ...){
   char row[300];
   va_list args;
   va_start(args, f);
   vsprintf(row, row_format.c_str(), args);
-  f<<row<<endl;
+  (*f)<<row<<endl;
   va_end(args);
-  return f;
+  return *f;
 }
 
 ostream& TableReport::print_line(ostream &f){
@@ -229,7 +229,7 @@ bool operator == (const Vector &x, const Vector &y){
 #include <Powrprof.h>
 
 //Declaration of CPUcycletime: 
-double CPUTimer::get_clock(){
+double CPUTimer::get_clock() const{
   HANDLE hProcess = OpenProcess(  PROCESS_QUERY_INFORMATION |
 				  PROCESS_VM_READ,
 				  FALSE, 

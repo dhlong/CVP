@@ -145,7 +145,7 @@ Vector CVP::solve(const IloObjective &iloobj){
   Timer *timer = new CPUTimer;
   TableReport tr("%15.5f%15.5f%15.5f%15.5f%15.5f%20.10e");
   if(proxy_obj == NULL) // if this is first solve
-    tr.print_header(solve_report,"t1", "t2", "t3", "t4", "t5", "obj");
+    tr.print_header(&solve_report,"t1", "t2", "t3", "t4", "t5", "obj");
 
   cout<<"New Solve"<<endl;
   timer->record();
@@ -203,7 +203,7 @@ Vector CVP::solve(const IloObjective &iloobj){
   timer->record();
   
   // reporting to solve report
-  tr.print_row(solve_report,
+  tr.print_row(&solve_report,
 	       timer->elapsed(-6,-5), timer->elapsed(-5,-4),
 	       timer->elapsed(-4,-3), timer->elapsed(-3,-2),
 	       timer->elapsed(-2,-1), obj_value);
@@ -269,7 +269,7 @@ Vector CVP::phase2(Vector *init){
 
   // header row of the iteration report
   TableReport tr("%-6d%-8d%8.4f%10.5f%6s%8.4f%8.3f%10.5e%17.8e");
-  tr.print_header(iteration_report,
+  tr.print_header(&iteration_report,
 		  "Iter", "#solve", "time", "beta", "ls?",
 		  "time_ls", "lambda*", "cosine", "obj");
   
@@ -324,7 +324,7 @@ Vector CVP::phase2(Vector *init){
     
     // Timing and Reporting
     timer->record();
-    tr.print_row(iteration_report, 
+    tr.print_row(&iteration_report, 
 		 iteration, count, timer->elapsed(-1,-3), beta, 
 		 do_line_search ? "YES" : "NO",
 		 timer->elapsed(-2, -1), lambda, cosine, f1);
@@ -569,7 +569,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 		 "%5.3s %5.3s "
 		 "%8.5f   %8.5f   %8.5f"
 		 "%8.3f %20.10e %20.10e %10.1e  %12.3f");
-  tr.print_header(iteration_report,
+  tr.print_header(&iteration_report,
 		  "Iter", "#solve",  "t_total",   "beta",
 		  "ls?",  "proj?", 
 		  "lambda*", "tau*0",     "tau*n",
@@ -682,7 +682,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     f1 = obj->f(x1);
     // Timing and Reporting
     timer->record();
-    tr.print_row(iteration_report,
+    tr.print_row(&iteration_report,
 		 iteration, count, timer->elapsed(-1,-4), beta,
 		 (do_line_search?"YES":"NO"), 
 		 (use_analytical_projection?"YES":"NO"),
@@ -719,7 +719,7 @@ Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int i
 
   // header row of the iteration report
   TableReport tr("%-5d%8.4f%8.4f%8.4f%8.4f%20.10e%12.3f");
-  tr.print_header(iteration_report, 
+  tr.print_header(&iteration_report, 
 		  "Iter", "t_total", "t_SP", "t_LS", 
 		  "tau", "obj", "t_elapsed");
   
@@ -769,7 +769,7 @@ Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int i
       
     // Timing and Reporting
     if(iteration%50 == 0)
-      tr.print_row(iteration_report, 
+      tr.print_row(&iteration_report, 
 		   iteration, timer->elapsed(-1,-3), timer->elapsed(-2,-3),
 		   timer->elapsed(-2,-1), tau, obj->f(x), timer->elapsed(0,-1));
   }
@@ -869,7 +869,7 @@ Vector CVP_MCNF_KL::solve_by_dijkstra_and_SOCP(){
   TableReport tr("%-4d  %7d     %8.3f   %12.2f"
 		 "%5.3s %8.5f   %8.5f   %8.5f"
 		 "%8.3f %20.10e %20.10e %10.1e  %12.3f");
-  tr.print_header(iteration_report,
+  tr.print_header(&iteration_report,
 		  "Iter", "#solve",  "t_total",   "beta",
 		  "ls?",  "lambda*", "tau*0",     "tau*n",
 		  "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed");
@@ -968,7 +968,7 @@ Vector CVP_MCNF_KL::solve_by_dijkstra_and_SOCP(){
 
     // Timing and Reporting
     timer->record();
-    tr.print_row(iteration_report,
+    tr.print_row(&iteration_report,
 		 iteration, count, timer->elapsed(-1,-4), beta,
 		 (do_line_search?"YES":"NO"), lambda, taustar0, taustar,
 		 timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1));

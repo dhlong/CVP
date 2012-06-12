@@ -358,12 +358,12 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		 "%8.5f   %8.5f   %8.5f"
 		 "%8.3f %20.10e %20.10e %10.1e  %12.3f");
 
-  tr.print_header(iteration_report,
+  tr.print_header(&iteration_report,
 		  "Iter", "#solve",  "t_total",   "beta",
 		  "ls?", 
 		  "lambda*", "tau*0",     "tau*n",
 		  "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed");
-  tr.print_header(cout,
+  tr.print_header(&cout,
 		  "Iter", "#solve",  "t_total",   "beta",
 		  "ls?", 
 		  "lambda*", "tau*0",     "tau*n",
@@ -397,7 +397,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
       f1 = obj->f(x1);
       count++; // counting number of solves (for reporting)
       if(f1 < f0) break;
-      if((x0-x1).dot(obj->g(x1)) < 0) break;
+      //if((x0-x1).dot(obj->g(x1)) < 0) break;
       beta *= settings.getr("beta down factor");
     }
 
@@ -451,12 +451,12 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
     f1 = robj->f(y1);
     // Timing and Reporting
     timer->record();
-    tr.print_row(iteration_report,
+    tr.print_row(&iteration_report,
 		 iteration, count, timer->elapsed(-1,-4), beta,
 		 (do_line_search?"YES":"NO"), 
 		 lambda, taustar0, taustar,
 		 timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1));
-    tr.print_row(cout,
+    tr.print_row(&cout,
 		 iteration, count, timer->elapsed(-1,-4), beta,
 		 (do_line_search?"YES":"NO"), 
 		 lambda, taustar0, taustar,
@@ -515,12 +515,12 @@ void solve_KL(const MultiCommoNetwork &net){
 		 "%8.5f   %8.5f   %8.5f"
 		 "%8.3f %20.10e %20.10e %10.1e  %12.3f");
 
-  tr.print_header(iteration_report,
+  tr.print_header(&iteration_report,
 		  "Iter", "#solve",  "t_total",   "beta",
 		  "ls?", 
 		  "lambda*", "tau*0",     "tau*n",
 		  "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed");
-  tr.print_header(cout,
+  tr.print_header(&cout,
 		  "Iter", "#solve",  "t_total",   "beta",
 		  "ls?", 
 		  "lambda*", "tau*0",     "tau*n",
@@ -551,12 +551,14 @@ void solve_KL(const MultiCommoNetwork &net){
       //z = g; z *= (-beta); z += x0;
       z = x0 - beta*g;
       socp(net, z, x1);
-      //assert(check_conservation(x1));
-      //assert(check_nonnegative(x1));         
-      f1 = obj->f(x1);
       count++; // counting number of solves (for reporting)
-      if(f1 < f0) break;
-      if((x0-x1).dot(obj->g(x1)) < 0) break;
+      assert(check_conservation(net,x1));
+      assert(check_nonnegative(x1));         
+      if(check_capacity(net, x1)){
+	f1 = obj->f(x1);
+	if(f1 < f0) break;
+	if((x0-x1).dot(obj->g(x1)) < 0) break;
+      }
       beta *= settings.getr("beta down factor");
     }
 
@@ -610,12 +612,12 @@ void solve_KL(const MultiCommoNetwork &net){
     f1 = robj->f(y1);
     // Timing and Reporting
     timer->record();
-    tr.print_row(iteration_report,
+    tr.print_row(&iteration_report,
 		 iteration, count, timer->elapsed(-1,-4), beta,
 		 (do_line_search?"YES":"NO"), 
 		 lambda, taustar0, taustar,
 		 timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1));
-    tr.print_row(cout,
+    tr.print_row(&cout,
 		 iteration, count, timer->elapsed(-1,-4), beta,
 		 (do_line_search?"YES":"NO"), 
 		 lambda, taustar0, taustar,
@@ -624,6 +626,7 @@ void solve_KL(const MultiCommoNetwork &net){
 
     assert(check_conservation(net,x1));
     assert(check_nonnegative(x1));
+    assert(check_capacity(net,x1));
       
   }
   
@@ -696,9 +699,10 @@ int main(){
   
   cout<<"Sovling"<<endl;
   //aCVP->optimize();
-  //init(net);
-  //BPRFunction *obj = new BPRFunction(net);
-  solve_KL(net);
+  init(net);
+  BPRFunction *obj = new BPRFunction(net);
+  solve(net,obj);
+  //solve_KL(net);
   timer->record();
 
   cout<<"Finishing"<<endl;
