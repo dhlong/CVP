@@ -442,7 +442,7 @@ Real general_section_search ( const Vector &A,
 
       if(fm > f2) fm = f2, bm = b2;
     }
-    if(fabs(fbound-fm)/(fbound+fm) < 0.5*1e-6) break;
+    //if(fabs(fbound-fm)/(fbound+fm) < 0.5*1e-8) break;
   }  
 
   delete x1; delete x2; delete x3; delete x4;

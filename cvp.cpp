@@ -10,6 +10,67 @@ extern fstream iteration_report;
 extern fstream solve_report;
 extern SettingMapper settings;
 
+#include <Eigen/Dense>
+
+MatrixXd projection_matrix(const Graph &net){
+  int V = net.getNVertex(), A = net.arcs.size();
+  MatrixXd m = MatrixXd::Zero(V-1,A);
+  FOR(a, A){
+    if(net.arcs[a].head != V-1) m(net.arcs[a].head, a) = 1.0;
+    if(net.arcs[a].tail != V-1) m(net.arcs[a].tail, a) = -1.0;
+  }
+  
+  MatrixXd M = (-1.0)*m.transpose()*(m*m.transpose()).inverse()*m;
+  FOR(a, A) M(a, a) += 1.0;
+  
+  return M;
+}
+
+Vector projection(const MultiCommoNetwork &net, const Vector &x, const MatrixXd &M){
+  int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
+  
+  MatrixXd X = MatrixXd::Zero(A,K);
+  ITER(x, itx) X(itx.index()/K, itx.index()%K) = itx.value();
+  
+  MatrixXd P = M*X;
+
+  Vector p(A*K);
+  FOR(a, A) FOR(k, K) p.insert(a*K+k) = P(a,k);
+
+  return p;
+}
+
+bool check_nonnegative(const Vector &x){
+  double max_deviation = 0.0;
+  ITER(x, it)  updatemin(max_deviation, it.value());
+  //cout<<"Non negative deviation = "<<max_deviation<<endl;
+  return max_deviation > -1.0e-6;
+}
+
+bool check_conservation(const MultiCommoNetwork &net, const Vector &x){
+  int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
+  vector< vector<double> > netflow(K);
+  double max_deviation = 0.0;
+  FOR(k, K) netflow[k] = vector<double>(V, 0.0);
+
+  ITER(x, itx){
+    int a = itx.index()/K, k = itx.index() % K;
+    netflow[k][net.arcs[a].head] -= itx.value();
+    netflow[k][net.arcs[a].tail] += itx.value();
+  }
+
+  FOR(k, K) FOR(v, V)
+    if(v == net.commoflows[k].origin)
+      updatemax(max_deviation, fabs(netflow[k][v]+net.commoflows[k].demand));
+    else if(v == net.commoflows[k].destination)
+      updatemax(max_deviation, fabs(netflow[k][v]-net.commoflows[k].demand));
+    else updatemax(max_deviation, fabs(netflow[k][v]));
+
+  //cout<<"Max deviation from conservation = "<<max_deviation<<endl;
+
+  return max_deviation < 1e-6;
+}
+
 //////////////////////////////////////////////////////////////
 ///////// CVP class' function definitions
 /////////
@@ -23,9 +84,7 @@ CVP::CVP():
   obj(NULL), 
   cplex(NULL), 
   proxy(NULL), 
-  proxy_obj(NULL) { 
-  default_settings(); 
-}
+  proxy_obj(NULL) { }
 
 // constructor from a potin to a objective function
 CVP::CVP(Function *obj_) : 
@@ -35,90 +94,7 @@ CVP::CVP(Function *obj_) :
   obj(obj_), 
   cplex(NULL), 
   proxy(NULL),
-  proxy_obj(NULL) { 
-  default_settings(); 
-}
-
-// default settings
-void CVP::default_settings(){
-  optimality_epsilon = 1e-7;
-  beta_up_factor = 1.1;
-  initial_beta = 10.0;
-  beta_down_factor = 0.5;
-  tau_multiplier = 4.0;
-  to_reset_beta = false;
-  to_line_search = true;
-  to_golden_search = true;
-  to_do_shortest_path = true;
-  to_do_SOCP = true;
-  to_include_capacity_constraints = true;
-  SP_iterations_per_SOCP = 10;
-  SP_iterations = 500;
-  settings.geti("line search iterations") = 20;
-}
-
-// Read new settings from file
-// If file not exist, no changes made
-void CVP::read_settings(fstream &f){
-  if(!f){
-    iteration_report<<"Default settings"<<endl;
-    iteration_report<<"=================================="<<endl;
-    return;
-  }
-
-  char line[300], *str;
-
-  // parsing each line to get the setting names and values
-  // the setting names and setting values are separated by '=' character
-  while(!f.eof()){
-    f.getline(line, 300);
-    str = strrchr(line,'='); // delim by the '=' character
-    if(str == NULL) continue; // no delim found, read next line
-    stringstream ss(str+1, stringstream::in);
-
-    if(strstr(line, "optimality epsilon") != NULL) 
-      ;//ss>>optimality_epsilon;
-    else if(strstr(line, "beta up factor") != NULL) 
-      ss>>beta_up_factor;
-    else if(strstr(line, "beta down factor") != NULL) 
-      ss>>beta_down_factor;
-    else if(strstr(line, "line search iteration") != NULL) 
-      ;//ss>>line_search_iterations;
-    else if(strstr(line, "initial beta") != NULL) 
-      ss>>initial_beta;
-    else if(strstr(line, "reset beta") != NULL)
-      to_reset_beta = (strstr(line,"yes") != NULL);
-    else if(strstr(line, "line search") != NULL)
-      to_line_search = (strstr(line,"yes") != NULL);
-    else if(strstr(line, "golden search") != NULL)
-      to_golden_search = (strstr(line,"yes") != NULL);
-    else if(strstr(line, "to do shortest path") != NULL)
-      to_do_shortest_path = (strstr(line,"yes") != NULL);
-    else if(strstr(line, "to do SOCP") != NULL)
-      to_do_SOCP = (strstr(line,"yes") != NULL);
-    else if(strstr(line, "to include capacity constraints") != NULL)
-      to_include_capacity_constraints = (strstr(line,"yes") != NULL);
-    else if(strstr(line, "SP iterations per SOCP") != NULL) 
-      ss>>SP_iterations_per_SOCP;
-    else if(strstr(line, "SP iterations") != NULL) 
-      ss>>SP_iterations;
-  }
-
-  // report settings to iteration report
-  iteration_report<<"Settings:"<<endl;
-  iteration_report<<"\toptimality epsilon = "<<settings.getr("optimality epsilon")<<endl;
-  iteration_report<<"\tinitial beta = "<<initial_beta<<endl;
-  iteration_report<<(to_reset_beta?"\treset beta":"\tno reset beta")<<endl;
-  iteration_report<<(to_golden_search?"\tgolden search":"\tnormal search")<<endl;
-  iteration_report<<"\tline search iterations = "<<settings.geti("line search iterations")<<endl;
-  iteration_report<<(to_do_SOCP?"\tuse SOCP":"\tno use SOCP")<<endl;
-  iteration_report<<(to_do_shortest_path?"\tuse shortest path":"\tno use shortest path")<<endl;
-  iteration_report<<(to_include_capacity_constraints?"\tinclude capacity constraints":"\tnot include capacity constraints")<<endl;
-  if(to_do_shortest_path && to_do_SOCP)
-    iteration_report<<"\tshortest path replications per iteration = "<<SP_iterations_per_SOCP<<endl;
-  FOR(i, 51) iteration_report<<"="; iteration_report<<endl;
-}
-
+  proxy_obj(NULL) { }
 
 // default initial proxy objective
 // projection the 0-point on the feasible set
@@ -157,6 +133,8 @@ IloObjective CVP::linear_proxy_obj(const Vector &x0){
   return obj;
 }
 
+int mark = true;
+
 bool CVP::is_optimal(const Vector &x, const Vector &z){
   Vector d(obj->g(x)), y(z);
   y -= x;
@@ -166,7 +144,7 @@ bool CVP::is_optimal(const Vector &x, const Vector &z){
 Vector CVP::solve(const IloObjective &iloobj){
   Timer *timer = new CPUTimer;
   TableReport tr("%15.5f%15.5f%15.5f%15.5f%15.5f%20.10e");
-  if(proxy_obj == NULL) // first solve
+  if(proxy_obj == NULL) // if this is first solve
     tr.print_header(solve_report,"t1", "t2", "t3", "t4", "t5", "obj");
 
   cout<<"New Solve"<<endl;
@@ -194,11 +172,14 @@ Vector CVP::solve(const IloObjective &iloobj){
   timer->record(); // timing
   
   // If cplex has not been created, create it
-  if (cplex == NULL) cplex = new IloCplex(*proxy);
+  if (cplex == NULL){
+    cplex = new IloCplex(*proxy);
+    //cplex->exportModel("mypro2.rlp");
+  }
   timer->record(); // timing
 
   cplex->setParam(IloCplex::Threads, 1);
-
+  cplex->setOut(env.getNullStream());
   // solve
   if(!cplex->solve()) {
     cout<<cplex->getStatus()<<endl;
@@ -235,8 +216,6 @@ CVP::~CVP(){
   if(proxy) delete proxy;
   if(proxy_obj) delete proxy_obj;
   if(obj) delete obj;
-  //variables.end();
-  //constraints.end();
 }
 
 Vector CVP::phase1(Vector *init){
@@ -266,7 +245,6 @@ Vector CVP::phase1(Vector *init){
   } while(cur_cost<=pre_cost);
   
   delete timer;
-  cout<<"Phase 1 failed"<<endl;
   return Vector();
 }
 
@@ -287,7 +265,7 @@ Vector CVP::phase2(Vector *init){
   iteration_report<<"Initialisation: time = "<<timer->elapsed()<<"s; obj = "<<f1<<endl;
   timer->record();
 
-  beta = initial_beta * sqrt(x0.dot(x0)); // added by Hieu
+  beta = settings.getr("initial beta") * sqrt(x0.dot(x0)); // added by Hieu
 
   // header row of the iteration report
   TableReport tr("%-6d%-8d%8.4f%10.5f%6s%8.4f%8.3f%10.5e%17.8e");
@@ -298,7 +276,8 @@ Vector CVP::phase2(Vector *init){
   // Loops
   Vector g, z;
   while(!exit_flag) {
-    if(to_reset_beta) beta = initial_beta * sqrt(x1.dot(x1));
+    if(settings.getb("to reset beta")) 
+      beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
 
     // Timing and Reporting
     ++iteration; count = 0; timer->record();
@@ -316,7 +295,7 @@ Vector CVP::phase2(Vector *init){
       f1 = obj->f(x1);
       count++; // counting number of solves (for reporting purpose)
       if(f1 < f0) break;
-      beta *= beta_down_factor;
+      beta *= settings.getr("beta down factor");
     }
 
     //Real normdx_before_ls = sqrt((x1-x0)*(x1-x0)); // added by Hieu
@@ -331,9 +310,9 @@ Vector CVP::phase2(Vector *init){
 
     // Line Search
     Real lambda = 1.0;
-    bool do_line_search = to_line_search && (g.dot(x0-x1)<0);
+    bool do_line_search = settings.getb("to do line search") && (g.dot(x0-x1)<0);
     if(do_line_search){
-      if(to_golden_search) 
+      if(settings.getb("to do golden search")) 
 	lambda = section_search(x0, x1, obj, settings.geti("line search iterations"));
       else 
 	lambda = line_search(x0, x1, obj, settings.geti("line search iterations"));
@@ -386,7 +365,7 @@ void CVP_NF::generate_flow_constraints(){
   FOR(i,A) {
     // Name the variable
     stringstream ssname;
-    ssname<<"flow["<<net.arcs[i].head<<"->"<<net.arcs[i].tail<<"]";
+    ssname<<"flow["<<net.arcs[i].head<<">"<<net.arcs[i].tail<<"]";
 
     // Add the varibale to the variable set
     variables.add(IloNumVar(env, 0.0, net.arcs[i].cap, ssname.str().c_str()));
@@ -459,12 +438,12 @@ CVP_MCNF::CVP_MCNF(Function *obj_, const MultiCommoNetwork &net_)
 }
 
 Vector CVP_MCNF::optimize(){
-  if (!to_do_SOCP){
+  if (!settings.getb("to do SOCP")){
     env.end();
     return solve_by_dijkstra();
   }
   this->generate_network_constraints();  
-  if (!to_do_shortest_path) return phase2();
+  if (!settings.getb("to do shortest path")) return phase2();
   return solve_by_dijkstra_and_SOCP();  
 }
 
@@ -483,7 +462,8 @@ void CVP_MCNF::generate_network_constraints(){
 
       // Add the variable to the set of variables
       variables.add(IloNumVar(env, 0.0, IloInfinity, ssname.str().c_str()));
-      if(to_include_capacity_constraints) sum += variables[a*K +i];
+      if(settings.getb("to include capacity constraints")) 
+	sum += variables[a*K +i];
     }
 
     FOR(i, K){
@@ -493,8 +473,9 @@ void CVP_MCNF::generate_network_constraints(){
     }
     
     // Capacity constraints
-    if(to_include_capacity_constraints) constraints.add(sum <= net.arcs[a].cap*0.99);
-    else sum.end();
+    if(settings.getb("to include capacity constraints")) 
+      constraints.add(sum <= net.arcs[a].cap);
+    sum.end();
   }
 
   // Generate flow constraints and add them to the constraint set
@@ -577,7 +558,7 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
   DA.get_flows(x1);
 
   Real f0, f1 = obj->f(x1); 
-  beta = initial_beta * sqrt(x1.dot(x1));
+  beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
   
   // Timing and Reporting
   timer->record();
@@ -585,21 +566,26 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 
   // format and header of the iteration report
   TableReport tr("%-4d  %7d     %8.3f   %12.2f"
-		 "%5.3s %8.5f   %8.5f   %8.5f"
+		 "%5.3s %5.3s "
+		 "%8.5f   %8.5f   %8.5f"
 		 "%8.3f %20.10e %20.10e %10.1e  %12.3f");
   tr.print_header(iteration_report,
 		  "Iter", "#solve",  "t_total",   "beta",
-		  "ls?",  "lambda*", "tau*0",     "tau*n",
+		  "ls?",  "proj?", 
+		  "lambda*", "tau*0",     "tau*n",
 		  "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed");
 
   Vector g, z, y1, y0;
   ReducableFunction *cobj = dynamic_cast<ReducableFunction*>(obj);
   Function *robj = (cobj)? cobj->reduced_function() : NULL;
-  
+
+  MatrixXd M = projection_matrix(net);
+  bool use_analytical_projection = false;
+
   // Loops
   Real taubound = -1, taustar = 0.5/5;
   while(!exit_flag) {
-    if(to_reset_beta) beta = initial_beta * sqrt(x1.dot(x1));
+    if(settings.getb("to reset beta")) beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
 
     // Timing and Reporting
     ++iteration; count = 0; timer->record();
@@ -611,14 +597,30 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     g = obj->g(x0);
     g *= (1/sqrt(g.dot(g)));
 
+    cout<<"Objective before SOCP = "<<f1<<endl;
+
     for(;;) {
       z = g; z *= (-beta); z += x0; // z = x0 - beta*g
+
+      // Try analytical solution first
+      x1 = projection(net, z-x0, M) + x0;
+      assert(check_conservation(net, x1));
+
+      if(check_nonnegative(x1)){
+	use_analytical_projection = true;
+	break;
+      }
+
+      use_analytical_projection = false;
       x1 = solve(quad_proxy_obj(z));
+
       f1 = obj->f(x1);
       count++; // counting number of solves (for reporting)
       if(f1 < f0) break;
-      beta *= beta_down_factor;
+      beta *= settings.getr("beta down factor");
     }
+
+    cout<<"Objective after SOCP = "<<f1<<endl;
 
     // Optimality check
     g = obj->g(x1); // g is now gradient at x1
@@ -630,9 +632,9 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 
     // Line Search
     Real lambda = 1.0;
-    bool do_line_search = to_line_search && (g.dot(x0-x1)<0);
+    bool do_line_search = settings.getb("to do line search") && (g.dot(x0-x1)<0);
     if(do_line_search){
-      if(to_golden_search) 
+      if(settings.getb("to do golden search")) 
 	lambda = section_search(x0, x1, obj, settings.geti("line search iterations"));
       else lambda = line_search(x0, x1, obj, settings.geti("line search iterations"));
       x1 -= x0; x1 *= lambda; x1 += x0; // x1 = x0 + betamin*(x1-x0)
@@ -643,6 +645,8 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     
     Real f_ls = f1, fsp, taustar0 = 0.0; // for reporting
 
+    // If objective function is reducable, use the reduced function
+    // for more efficient section search
     if(cobj){
       Vector y1(cobj->reduced_variable(x1));
       FOR(iter, settings.geti("SP iterations per SOCP")) {
@@ -654,9 +658,14 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
 		      cost_t(itgy.value()));
 	DA.get_flows(sp);
 	Vector ysp(cobj->reduced_variable(sp));
+	timer->record();
 	taustar = section_search(y1, ysp, robj, settings.geti("line search iterations"));
+	timer->record();
 	x1 -= sp;  x1 *= (1-taustar); x1 += sp; 
 	y1 -= ysp; y1 *= (1-taustar); y1 += ysp;
+	timer->record();
+	cout<<"Search time = "<<timer->elapsed(-2,-3)<<"; Cal iter "<< settings.geti("SP iterations per SOCP")<<"; Search = "<<timer->elapsed()<<endl;
+      //cout<<"SP time = "<<timer->elapsed(-2,-3)<<"; Search = "<<timer->elapsed()<<endl;
 	if(iter == 0) taustar0 = taustar;
       }
     }
@@ -675,9 +684,14 @@ Vector CVP_MCNF::solve_by_dijkstra_and_SOCP(){
     timer->record();
     tr.print_row(iteration_report,
 		 iteration, count, timer->elapsed(-1,-4), beta,
-		 (do_line_search?"YES":"NO"), lambda, taustar0, taustar,
+		 (do_line_search?"YES":"NO"), 
+		 (use_analytical_projection?"YES":"NO"),
+		 lambda, taustar0, taustar,
 		 timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1));
     if(taustar == 0.0) taustar = 1.0; 
+
+    //assert(check_conservation(net, x1));
+    //assert(check_nonnegative(x1));
   }
   
   // Reporting final results
@@ -844,7 +858,7 @@ Vector CVP_MCNF_KL::solve_by_dijkstra_and_SOCP(){
   Vector x1 = solve(this->initial_proxy_obj()), x0(A*K), sp(A*K);
   proxy->remove(capconstraints);
   Real f0, f1 = obj->f(x1); 
-  Real beta = initial_beta * sqrt(x1.dot(x1));
+  Real beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
   
   // Timing and Reporting
   timer->record();
@@ -868,7 +882,8 @@ Vector CVP_MCNF_KL::solve_by_dijkstra_and_SOCP(){
     iteration ++; count = 0; timer->record();
     cout<<"Mark 0"<<endl;
 
-    if(to_reset_beta) beta = initial_beta * sqrt(x1.dot(x1));
+    if(settings.getb("to reset beta")) 
+      beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
 
     // Previous best solution
     x0 = x1; f0 = f1;
@@ -894,7 +909,7 @@ Vector CVP_MCNF_KL::solve_by_dijkstra_and_SOCP(){
 	f1 = rkl->f(y1);
 	if(f1<f0) break;
       }
-      beta *= beta_down_factor;
+      beta *= settings.getr("beta down factor");
     }
 
     // Optimality check
@@ -907,9 +922,9 @@ Vector CVP_MCNF_KL::solve_by_dijkstra_and_SOCP(){
 
     // Line Search
     Real lambda = 1.0;
-    bool do_line_search = to_line_search && (g.dot(x0-x1)<0);
+    bool do_line_search = settings.getb("to do line search") && (g.dot(x0-x1)<0);
     if(do_line_search){
-      if(to_golden_search) 
+      if(settings.getb("to do golden search")) 
 	lambda = section_search(x0, x1, obj, settings.geti("line search iterations"));
       else lambda = line_search(x0, x1, obj, settings.geti("line search iterations"));
       x1 -= x0; x1 *= lambda; x1 += x0; // x1 = x0 + betamin*(x1-x0)

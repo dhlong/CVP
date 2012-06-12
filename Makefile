@@ -38,20 +38,31 @@ CCLNFLAGS = -L$(CPLEXLIBDIR) -lilocplex -lcplex -L$(CONCERTLIBDIR) -lconcert -lm
 
 CCFLAGS = $(CCOPT) -I$(CPLEXINCDIR) -I$(CONCERTINCDIR) -I$(EIGENDIR)
 
-all: CVP
+all: CVP matrix_test CVP_alter
 
-ALL_O = main.o cvp.o network.o function.o dijkstra.o
+CVP_O = main.o cvp.o network.o function.o dijkstra.o cvputility.o
+MATRIX_TEST_O = matrix_test.o network.o dijkstra.o cvputility.o
+CVP_ALTER_O = network.o dijkstra.o cvputility.o function.o cvp_alter.o
 
 # ------------------------------------------------------------
 
 clean :
 	/bin/rm -rf *.o *~ *.class
-	/bin/rm -rf $(CPP_EX)
+	/bin/rm -rf CVP matrix_test  CVP_alter
 	/bin/rm -rf *.mps *.ord *.sos *.lp *.sav *.net *.msg *.log *.clp
+	/bin/rm *~
 
 # ------------------------------------------------------------
 
-CVP: $(ALL_O)
-	$(CCC) $(CCFLAGS) $(ALL_O) -o CVP $(CCLNFLAGS) -lrt
+CVP: $(CVP_O)
+	@echo Compiling CVP
+	@$(CCC) $(CCFLAGS) $(CVP_O) -o CVP $(CCLNFLAGS) -lrt
+matrix_test: $(MATRIX_TEST_O)
+	@echo Compiling matrix_test
+	@$(CCC) $(CCFLAGS) $(MATRIX_TEST_O) -o $@ $(CCLNFLAGS) -lrt
+CVP_alter: $(CVP_ALTER_O)
+	@echo Compiling CVP Alter
+	@$(CCC) $(CCFLAGS) $(CVP_ALTER_O) -o $@ $(CCLNFLAGS) -lrt
 %.o: %.cpp
-	$(CCC) -c $(CCFLAGS) $< -o $@
+	@echo Compiling $<
+	@$(CCC) -c $(CCFLAGS) $< -o $@

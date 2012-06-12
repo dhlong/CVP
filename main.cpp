@@ -1,8 +1,8 @@
 #include "cvp.h"
 
-fstream iteration_report;
-fstream solve_report;
-SettingMapper settings;
+fstream iteration_report; // globally-accessed iteration report
+fstream solve_report;     // globally-accessed solve report
+SettingMapper settings;   // globally-accessed setting mapper
 
 int main(int argc, char* argv[]){
   string ininame,inputname, outputname, timername, pajekname;
@@ -18,35 +18,36 @@ int main(int argc, char* argv[]){
   timeinfo = localtime (&rawtime);
   sprintf(timestr,"%04d%02d%02d%02d%02d",
 	  timeinfo->tm_year+1900, 
-	  timeinfo->tm_mon, 
+	  timeinfo->tm_mon+1, 
 	  timeinfo->tm_mday, 
 	  timeinfo->tm_hour, 
 	  timeinfo->tm_min);
 
-  // settings information
-  // if file CVP.ini does not exist, default settings will be used
+  // start the timer
+  timer->record();
+
+  // Reading settings from file "CVP.ini"
   ininame = "CVP.ini";
   fstream fini(ininame.c_str(), fstream::in);
   settings.read(fini);
   fini.close();
-
-  // start the timer
-  timer->record();
-
-  cout<<"Mark1"<<endl;
-
+  
+  // generate input and report file names
   inputname = settings.gets("input file");
-  cout<<"Input file to be read: "<<inputname<<endl;
   outputname = inputname + "_iterations_" + string(timestr) + ".txt";
   timername  = inputname + "_solves_" + string(timestr) + ".txt";
   pajekname  = inputname + "pajek.net";
  
+  // prepare files for reporting
   iteration_report.open(outputname.c_str(), fstream::out);
   solve_report.open(timername.c_str(), fstream::out);
   
-  cout<<"Solving problem \""<<inputname<<"\""<<endl<<endl;
   iteration_report<<"Solving problem \""<<inputname<<"\""<<endl<<endl;
-    
+
+  // Report settings
+  iteration_report<<"Settings:"<<endl;
+  settings.report(iteration_report);
+  
   // check format of the input based on the filename given
   // if file name contains "grid" or "planar" --> genflot format
   // else tntp format
@@ -62,9 +63,6 @@ int main(int argc, char* argv[]){
   CVP_MCNF *aCVP =  new CVP_MCNF(new BPRFunction(net), net);
   //CVP_MCNF_KL *aCVP =  new CVP_MCNF_KL(net);
 
-  fini.open("CVP.ini", fstream::in);
-  aCVP->read_settings(fini);
-  fini.close();
   timer->record();
   
   cout<<"Sovling"<<endl;
@@ -73,7 +71,6 @@ int main(int argc, char* argv[]){
 
   cout<<"Finishing"<<endl;
   delete aCVP;
-
   timer->record();
 
   solve_report<<"Reading time    = "<<timer->elapsed(-4,-5)<<"s"<<endl;
@@ -82,14 +79,17 @@ int main(int argc, char* argv[]){
   solve_report<<"Finalizing time = "<<timer->elapsed(-1,-2)<<"s"<<endl;
 
   iteration_report << "Solving time = "
-		   << right << setw(10) << setprecision(5) << fixed
+		   << left << setw(10) << setprecision(5) << fixed
 		   << timer->elapsed(-2,-3) << "s"
 		   << endl;
 
-  memory_report(iteration_report);
+  iteration_report << "Peak memory  = " 
+		   << left << setw(10) << setprecision(2) << fixed
+		   << memory_usage()/1e3 << "kB" <<endl;
 
   iteration_report.close();
   solve_report.close();
   delete timer;
   return 0;
 }
+

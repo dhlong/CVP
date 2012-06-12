@@ -21,8 +21,7 @@ ILOSTLBEGIN
 
 class CVP{
  private:
-  void default_settings();
-  
+
   // ILOG objects
   IloObjective *proxy_obj; // pointer to the proxy objective
   IloCplex *cplex; // pointer to the cplex (CPLEX solver)
@@ -32,21 +31,6 @@ class CVP{
   
  protected:
   // Settings
-  Real optimality_epsilon;
-  Real initial_beta;
-  Real beta_up_factor;
-  Real beta_down_factor;
-  Real tau_multiplier;
-  bool to_reset_beta;
-  bool to_golden_search;
-  bool to_line_search;
-  bool to_do_shortest_path;
-  bool to_do_SOCP;
-  bool to_include_capacity_constraints;
-  int SP_iterations_per_SOCP;
-  int SP_iterations;
-  int line_search_iterations;
-
   IloObjective quad_proxy_obj(const Vector &y);
   IloObjective linear_proxy_obj(const Vector &x);
 
@@ -71,9 +55,6 @@ class CVP{
   // destructor
   virtual ~CVP();
 
-  // settings
-  void read_settings(fstream &f);  
-  
   // optimization procedures
   virtual Vector phase2(Vector *init=NULL);
   virtual Vector phase1(Vector *init=NULL);
