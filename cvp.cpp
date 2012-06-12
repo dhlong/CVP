@@ -747,8 +747,11 @@ Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int i
       if(4*tau >= 1.0) tau = section_search(y, ysp, robj);
       else tau = section_search(y, ysp, robj, 
 				settings.geti("line search iterations"), 
+				false,
 				4*tau*(1-PHI), 4*tau*PHI);
-      x -= sp;  x *= (1-tau); x += sp;
+      //x -= sp;  x *= (1-tau); x += sp;
+      Vector z = (sp - x);
+      x += tau*z;
       y -= ysp; y *= (1-tau); y += ysp;
     }
     else{
@@ -760,8 +763,10 @@ Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int i
       DA.get_flows(sp);
       timer->record();
       
-      if(4*tau >= 1.0) tau = section_search(x, sp, robj);
-      else tau = section_search(x, sp, obj, 20, 4*tau*(1-PHI), 4*tau*PHI);
+      if(4*tau >= 1.0) tau = section_search(x, sp, obj);
+      else tau = section_search(x, sp, obj, 
+				settings.geti("line search iterations"), 
+				false, 4*tau*(1-PHI), 4*tau*PHI);
       x -= sp; x *= (1-tau); x += sp;
     }
 
