@@ -773,7 +773,7 @@ Vector solve_by_dijkstra_only(const MultiCommoNetwork &net, Function *obj, int i
     timer->record();
       
     // Timing and Reporting
-    if(iteration%50 == 0)
+    if(iteration%settings.geti("SP iterations per report") == 0)
       tr.print_row(&iteration_report, 
 		   iteration, timer->elapsed(-1,-3), timer->elapsed(-2,-3),
 		   timer->elapsed(-2,-1), tau, obj->f(x), timer->elapsed(0,-1));

@@ -1,6 +1,8 @@
 #include "function.h"
 
-//#define INFINITY 1e200
+#ifndef INFINITY
+#define INFINITY 1e200
+#endif
 
 QuarticFunction::QuarticFunction(const Network &n) : 
   net(n), to(n.getNVertex()) {

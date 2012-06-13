@@ -47,7 +47,7 @@ int main(){
   cout<<"eps max = "<<eps<<endl;
   cout<<"average M = "<<averageM<<endl;
   cout<<"Non zeros: "<<count<<"/"<<A*A<<endl;
-  cout<<"Multiplication 2 time "<<timer.elapsed()<<"s"<<endl;
-  cout<<"Multiplication 1 time "<<timer.elapsed(-4,-5)<<"s"<<endl;
-  cout<<"Inversion time "<<timer.elapsed(-4,-3)<<"s"<<endl;
+  cout<<"Multiplication 2 time "<<setprecision(6)<<timer.elapsed()<<"s"<<endl;
+  cout<<"Multiplication 1 time "<<setprecision(6)<<timer.elapsed(-4,-5)<<"s"<<endl;
+  cout<<"Inversion time "<<setprecision(6)<<timer.elapsed(-4,-3)<<"s"<<endl;
 }
