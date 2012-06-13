@@ -1,5 +1,6 @@
 #include "network.h"
 #include "function.h"
+#include <list>
 #include <ilcplex/cplex.h>
 
 #define FREE(p)	  \
@@ -151,18 +152,30 @@ void init(const MultiCommoNetwork &net){
 	FOR(k, K) p[k] = (double*) malloc(A*sizeof(double));
 }
 
-void socp(const MultiCommoNetwork &net, const Vector &z_, Vector &p_){
+void socp(const MultiCommoNetwork &net, const Vector &x0, const Vector &g, Real beta, Vector &p_){
 	int *collist = (int*) malloc(A*sizeof(int));
+	double *z = (double*) malloc(A*sizeof(double));
+	double *p = (double*) malloc(A*sizeof(double));
+	vector<Vector*> x(K);
+	vector< pair<int, Real> > tmp;
 	double rhsval[2];
 	int rhsind[2];
 
-	FOR(k, K) FOR(a, A) z[k][a] = 0.0;
-	ITER(z_, itz) z[itz.index()%K][itz.index()/K] = -2*itz.value();
+	FOR(a, A) z[a] = 0.0;
+	ITER(g, itg) z[itg.index()] = 2*beta*itg.value();
+
+	FOR(k, K) x[k] = new Vector(A);
+	ITER(x0, itx0)
+		(*x[itx0.index()%K]).insert(itx0.index()/K) = itx0.value();
+
+	//ITER(z_, itz) z[itz.index()%K][itz.index()/K] = -2*itz.value();
 
 	FOR(a, A) collist[a] = a;
   
 	FOR(k, K){
-		assert(!CPXchgobj(env, lp, A, collist, z[k]));
+		ITER((*x[k]), itxk) z[itxk.index()] -= 2*itxk.value();
+
+		assert(!CPXchgobj(env, lp, A, collist, z));
     
 		rhsind[0] =   net.commoflows[k].origin;
 		rhsind[1] =   net.commoflows[k].destination;
@@ -171,14 +184,23 @@ void socp(const MultiCommoNetwork &net, const Vector &z_, Vector &p_){
 		assert(!CPXchgrhs(env, lp, 2, rhsind, rhsval));
 
 		assert(!CPXqpopt (env, lp));
-		assert(!CPXgetx(env, lp, p[k], 0, A-1));
+		assert(!CPXgetx(env, lp, p, 0, A-1));
 
 		rhsval[0] = rhsval[1] = 0.0;
 		assert(!CPXchgrhs(env, lp, 2, rhsind, rhsval));    
+
+		ITER((*x[k]), itxk) z[itxk.index()] += 2*itxk.value();
+		delete x[k];
+
+		FOR(a, A) if(p[a] > 1e-10) tmp.push_back(make_pair(a*K + k, p[a]));
 	}
   
+	sort(tmp.begin(), tmp.end());
 	p_ = Vector(A*K);
-	FOR(a, A) FOR(k, K) if(p[k][a]>1e-10) p_.insert(a*K+k) = p[k][a];
+	FOR(i, tmp.size()) p_.insert(tmp[i].first) = tmp[i].second;
+
+	FREE(z);
+	FREE(p);
 	FREE(collist);
 }
 
@@ -369,33 +391,37 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		x0 = x1; f0 = f1; y0 = y1;
     
 		// normalized gradient
-		g = obj->g(x0);
-		g *= (1/sqrt(g.dot(g)));
+		Vector g0 = robj->g(y0);
+		g0 *= (1/sqrt(g0.dot(g0)*K));
 
 		for(count = 1;; count++) {
 			//z = g; z *= (-beta); z += x0;
-			z = x0 - beta*g;
-			socp(net, z, x1);
+			//z = x0 - beta*g;
+			socp(net, x0, g0, beta, x1);
 			f1 = obj->f(x1);
 			if(f1 < f0) break;
 			//if((x0-x1).dot(obj->g(x1)) < 0) break;
 			beta *= settings.getr("beta down factor");
 		}
 
+		y1 = obj->reduced_variable(x1);
+		Vector g1 = robj->g(y1); // g is now gradient at x1
+
 		// Optimality check
-		g = obj->g(x1); // g is now gradient at x1
-		z -= x1; // z is now z - x1
-		Real cosine = 1 + (z.dot(g))/sqrt((z.dot(z))*(g.dot(g)));
+		Vector dx = x0 - x1, dy = y0 - y1;
+		Real g1dx = dy.dot(g1), g1g1 = K*g1.dot(g1), dxdx = dx.dot(dx);
+		Real g0dx = dy.dot(g0), g0g1 = K*g0.dot(g1), g0g0 = K*g0.dot(g0);
+		Real cosine = 1 + ( (g1dx - beta*g0g1) /
+		                    sqrt((dxdx -2*beta*g0dx + beta*beta*g0g0)*g1g1) );
 		exit_flag = cosine  <= settings.getr("optimality epsilon"); 
     
 		timer->record(); // for timing
 
-		y1 = obj->reduced_variable(x1);
 
 		// Line Search
 		Real lambda = 1.0;
 		bool do_line_search = ( settings.getb("to do line search") && 
-		                        g.dot(x0-x1)<0 );
+		                        g1dx < 0 );
 		if(do_line_search){
 			lambda = section_search (y0, y1, robj, 
 			                         settings.geti("line search iterations"));
@@ -411,12 +437,12 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		double tau = taustar0*20;
 		updatemin(tau, 1.0);
 		FOR(iter, settings.geti("SP iterations per SOCP")) {
-			Vector gy(robj->g(y1));
+			g1 = robj->g(y1);
 			DA.reset_cost();
-			ITER(gy, itgy)
-				DA.set_cost ( net.arcs[itgy.index()].head,
-				              net.arcs[itgy.index()].tail,
-				              cost_t(itgy.value()));
+			ITER(g1, itg1)
+				DA.set_cost ( net.arcs[itg1.index()].head,
+				              net.arcs[itg1.index()].tail,
+				              cost_t(itg1.value()));
 			DA.get_flows(sp);
 			Vector ysp(obj->reduced_variable(sp));
 
@@ -527,7 +553,7 @@ void solve_KL(const MultiCommoNetwork &net){
 		for(count = 1;;count++) {
 			//z = g; z *= (-beta); z += x0;
 			z = x0 - beta*g;
-			socp(net, z, x1);
+			//socp(net, z, x1);
 			if(check_capacity(net, x1)){
 				f1 = obj->f(x1);
 				if(f1 < f0) break;
