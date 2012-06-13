@@ -372,7 +372,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		g = obj->g(x0);
 		g *= (1/sqrt(g.dot(g)));
 
-		for(count = 0;; count++) {
+		for(count = 1;; count++) {
 			//z = g; z *= (-beta); z += x0;
 			z = x0 - beta*g;
 			socp(net, z, x1);
@@ -510,12 +510,12 @@ void solve_KL(const MultiCommoNetwork &net){
 
 	// Loops
 	Real taubound = -1, taustar = 0.5/5, taustar0 = 1.0;
-	for(int iteration = 0; !exit_flag; iteration++) {
+	for(int iteration = 1; !exit_flag; iteration++) {
 		if(settings.getb("to reset beta")) 
 			beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
 
 		// Timing and Reporting
-		++iteration; count = 0; timer->record();
+		timer->record();
 
 		// Previous best solution
 		x0 = x1; f0 = f1; y0 = y1;
@@ -524,7 +524,7 @@ void solve_KL(const MultiCommoNetwork &net){
 		g = obj->g(x0);
 		g *= (1/sqrt(g.dot(g)));
 
-		for(count = 0;;count++) {
+		for(count = 1;;count++) {
 			//z = g; z *= (-beta); z += x0;
 			z = x0 - beta*g;
 			socp(net, z, x1);
