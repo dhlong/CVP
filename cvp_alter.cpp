@@ -153,27 +153,29 @@ void init(const MultiCommoNetwork &net){
 }
 
 void socp(const MultiCommoNetwork &net, const Vector &x0, const Vector &g, Real beta, Vector &p_){
+	typedef pair<int, Real> PAIRIR;
+	typedef list<PAIRIR> LPAIRIR;
 	int *collist = (int*) malloc(A*sizeof(int));
 	double *z = (double*) malloc(A*sizeof(double));
 	double *p = (double*) malloc(A*sizeof(double));
-	vector<Vector*> x(K);
-	vector< pair<int, Real> > tmp;
+	vector<LPAIRIR> x(K);
+	vector<LPAIRIR> tmp(A);
 	double rhsval[2];
 	int rhsind[2];
 
 	FOR(a, A) z[a] = 0.0;
 	ITER(g, itg) z[itg.index()] = 2*beta*itg.value();
 
-	FOR(k, K) x[k] = new Vector(A);
 	ITER(x0, itx0)
-		(*x[itx0.index()%K]).insert(itx0.index()/K) = itx0.value();
+		x[itx0.index()%K].push_back(make_pair(itx0.index()/K, itx0.value()));
 
 	//ITER(z_, itz) z[itz.index()%K][itz.index()/K] = -2*itz.value();
 
 	FOR(a, A) collist[a] = a;
   
 	FOR(k, K){
-		ITER((*x[k]), itxk) z[itxk.index()] -= 2*itxk.value();
+		for(LPAIRIR::iterator it = x[k].begin(); it != x[k].end(); ++it)
+			z[(*it).first] -= 2*(*it).second;
 
 		assert(!CPXchgobj(env, lp, A, collist, z));
     
@@ -189,15 +191,16 @@ void socp(const MultiCommoNetwork &net, const Vector &x0, const Vector &g, Real 
 		rhsval[0] = rhsval[1] = 0.0;
 		assert(!CPXchgrhs(env, lp, 2, rhsind, rhsval));    
 
-		ITER((*x[k]), itxk) z[itxk.index()] += 2*itxk.value();
-		delete x[k];
+		for(LPAIRIR::iterator it = x[k].begin(); it != x[k].end(); ++it)
+			z[(*it).first] += 2*(*it).second;
 
-		FOR(a, A) if(p[a] > 1e-10) tmp.push_back(make_pair(a*K + k, p[a]));
+		FOR(a, A) if(p[a] > 1e-10) tmp[a].push_back(make_pair(k, p[a]));
 	}
   
-	sort(tmp.begin(), tmp.end());
 	p_ = Vector(A*K);
-	FOR(i, tmp.size()) p_.insert(tmp[i].first) = tmp[i].second;
+	FOR(a, A)
+		for(LPAIRIR::iterator it = tmp[a].begin(); it != tmp[a].end(); ++it)
+			p_.insert(a*K+(*it).first) = (*it).second;
 
 	FREE(z);
 	FREE(p);
