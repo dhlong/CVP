@@ -9,7 +9,7 @@ QuarticFunction::QuarticFunction(const Network &n) :
   FOR(i,n.arcs.size()) to[net.arcs[i].head].push_back(i);
 }
 
-Real QuarticFunction::f(const Vector &v) const{
+Real QuarticFunction::f(Vector &v) const{
   Real sum = 0.0, x, c;
   int arc;
   
@@ -30,7 +30,7 @@ Real QuarticFunction::f(const Vector &v) const{
   return sum;
 }
 
-Vector QuarticFunction::g(const Vector &v) const{
+Vector QuarticFunction::g(Vector &v) const{
   Vector d(v.size());
   Real x, c, sum;
   int a;
@@ -54,7 +54,7 @@ Vector QuarticFunction::g(const Vector &v) const{
 
 //!!!! have not debugged
 // do not use yet
-Vector QuarticFunction::gg(const Vector &v) const{
+Vector QuarticFunction::gg(Vector &v) const{
   Vector d(v.size());
   Real x, c, sum;
   int a;
@@ -79,17 +79,17 @@ Vector QuarticFunction::gg(const Vector &v) const{
 BPRFunction::BPRFunction(const MultiCommoNetwork &n, Real a, Real b): 
   net(n), alpha(a), beta(b) {}
 
-Real BPRFunction::f(const Vector &x) const {
+Real BPRFunction::f(Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
   Real sum = 0.0, ya, ca, ta;
-  Vector::InnerIterator itx(x);
-  while(itx){
+  Vector::iterator itx = x.get_iterator();
+  while(!itx.end()){
     int a = itx.index() / K;
     ca = net.arcs[a].cap;
     ta = net.arcs[a].cost;
     ya = 0.0;
-    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
+    do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
     sum += ta*ya*(1 + alpha/(beta+1)*pow(ya/ca,beta));
   }
   return sum;
@@ -99,51 +99,56 @@ Function* BPRFunction::reduced_function() const {
   return new ReducedBPRFunction(net);
 }
 
-Vector BPRFunction::reduced_variable(const Vector &x) const {
+Vector BPRFunction::reduced_variable(Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size());
   Vector y(A);
-  Vector::InnerIterator itx(x);
-  while(itx){
+  Vector::iterator itx = x.get_iterator();
+  while(!itx.end()){
     int a = itx.index()/K;
     Real ya = 0.0;
-    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
-    y.coeffRef(a) = ya;
+    do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
+    y.insert(a) = ya;
   }
   return y;
 }
 
-Vector BPRFunction::g(const Vector &x) const {
+Vector BPRFunction::g(Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
   Vector d(K*A);
   Real ya, ca, dd, ta;
-  Vector::InnerIterator itx(x);
-  FOR(i, K*A) d.insert(i) = net.arcs[i/K].cost;
-  while(itx){
+  Vector::iterator itx = x.get_iterator();
+
+  while(!itx.end()){
     int a = itx.index() / K;
     ca = net.arcs[a].cap;
     ta = net.arcs[a].cost;
     ya = 0.0;
-    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
-    dd = ta*alpha*pow(ya/ca,beta);
-    FOR(k, K) d.coeffRef(a*K+k) += dd;
+    do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
+    dd = ta + ta*alpha*pow(ya/ca,beta);
+    FOR(k, K) d.insert(a*K+k) = dd;
+
+    int na = itx.end()? A : itx.index()/K;
+    for(int aa = a+1; aa < na; aa++) 
+	    FOR(k, K)
+		    d.insert(aa*K+k) = net.arcs[aa].cost;		                                                         
   }
   return d;
 }
 
-Vector BPRFunction::gg(const Vector &x) const {
+Vector BPRFunction::gg(Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
   Vector d(K*A);
   Real ya, ca, dd, ta;
-  Vector::InnerIterator itx(x);
-  while(itx){
+  Vector::iterator itx = x.get_iterator();
+  while(!itx.end()){
     int a = itx.index() / K;
     ca = net.arcs[a].cap;
     ta = net.arcs[a].cost;
     ya = 0.0;
-    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
+    do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
     dd = ta*alpha*beta*pow(ya/ca,beta-1)/ca;
     if(fabs(dd)>1e-7) FOR(k, K) d.insert(a*K+k) = dd;
   }
@@ -153,7 +158,7 @@ Vector BPRFunction::gg(const Vector &x) const {
 ReducedBPRFunction::ReducedBPRFunction(const MultiCommoNetwork &n, Real a, Real b): 
   net(n), alpha(a), beta(b) {}
 
-Real ReducedBPRFunction::f(const Vector &x) const {
+Real ReducedBPRFunction::f(Vector &x) const {
   int A = net.arcs.size();
   assert(A == x.size()); // debug
   Real sum = 0.0, ya, ca, ta;
@@ -167,23 +172,25 @@ Real ReducedBPRFunction::f(const Vector &x) const {
   return sum;
 }
 
-Vector ReducedBPRFunction::g(const Vector &x) const {
-  int A = net.arcs.size();
+Vector ReducedBPRFunction::g(Vector &x) const {
+  int A = net.arcs.size(), a = 0, pa = 0;
   assert(A == x.size()); // debug
   Vector d(A);
   Real ya, ca, ta;
-  FOR(a, A) d.insert(a) =  net.arcs[a].cost;
   ITER(x, itx){
-    int a = itx.index();
+    pa = a;
+    a = itx.index();
+    for(int aa = pa+1; aa<a; aa++) d.insert(aa) = net.arcs[aa].cost;
     ya = itx.value(); 
     ca = net.arcs[a].cap; 
     ta = net.arcs[a].cost;
-    d.coeffRef(a) += ta*alpha*pow(ya/ca,beta);
+    d.insert(a) = ta + ta*alpha*pow(ya/ca,beta);
   }
+  for(int aa = a+1; aa<A; aa++) d.insert(aa) = net.arcs[aa].cost;
   return d;
 }
 
-Vector ReducedBPRFunction::gg(const Vector &x) const {
+Vector ReducedBPRFunction::gg(Vector &x) const {
   int A = net.arcs.size();
   assert(A == x.size()); // debug
   Vector d(A);
@@ -197,33 +204,33 @@ Vector ReducedBPRFunction::gg(const Vector &x) const {
   return d;
 }
 
-Real KleinrockFunction::f(const Vector &x) const{
+Real KleinrockFunction::f(Vector &x) const{
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
   Real sum = 0.0, ya, ca;
-  Vector::InnerIterator itx(x);
-  while(itx){
+  Vector::iterator itx = x.get_iterator();
+  while(!itx.end()){
     int a = itx.index() / K;
     ca = net.arcs[a].cap;
     ya = 0.0;
-    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
+    do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
     if(ca>ya) sum += ya/(ca-ya);
     else return INFINITY;
   }
   return sum;
 }
 
-Vector KleinrockFunction::g(const Vector &x) const{
+Vector KleinrockFunction::g(Vector &x) const{
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
   Vector d(K*A);
   Real ya, ca, dd;
-  Vector::InnerIterator itx(x);
-  while(itx){
+  Vector::iterator itx = x.get_iterator();
+  while(!itx.end()){
     int a = itx.index() / K;
     ca = net.arcs[a].cap;
     ya = 0.0;
-    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
+    do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
     dd = ca - ya;
     if(dd > 0) dd = ca/(dd*dd);
     else dd = INFINITY;
@@ -236,30 +243,30 @@ Function* KleinrockFunction::reduced_function() const {
   return new ReducedKleinrockFunction(net);
 }
 
-Vector KleinrockFunction::reduced_variable(const Vector &x) const {
+Vector KleinrockFunction::reduced_variable(Vector &x) const {
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size());
   Vector y (A);
-  Vector::InnerIterator itx(x);
-  while(itx){
+  Vector::iterator itx = x.get_iterator();
+  while(!itx.end()){
     int a = itx.index()/K;
     Real ya = 0.0;
-    do ya += itx.value(), ++itx; while(itx && itx.index()/K == a);
+    do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
     y.insert(a) = ya;
   }
   return y;
 }
 
-Vector KleinrockFunction::gg(const Vector &x) const{
+Vector KleinrockFunction::gg(Vector &x) const{
   int K = net.commoflows.size(), A = net.arcs.size();
   assert(K*A == x.size()); // debug
   Vector d(K*A);
   Real ya, ca, dd;
-  Vector::InnerIterator itx(x);
-  while(itx){
+  Vector::iterator itx = x.get_iterator();
+  while(!itx.end()){
     int a = itx.index()/K;
     ya = 0.0; ca = net.arcs[a].cap;
-    do ya += itx.value(), ++itx; while(itx && itx.index()/K==a);
+    do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K==a);
     dd = ca - ya;
     //assert(ca-ya>0);
     if(ca-ya>0) dd = 2*ca/(dd*dd*dd);
@@ -273,7 +280,7 @@ KleinrockFunction::KleinrockFunction(const MultiCommoNetwork &n) : net(n){
 }
 
 
-Real ReducedKleinrockFunction::f(const Vector &x) const {
+Real ReducedKleinrockFunction::f(Vector &x) const {
   int A = net.arcs.size();
   assert(A == x.size()); // debug
   Real sum = 0.0, ya, ca;
@@ -287,7 +294,7 @@ Real ReducedKleinrockFunction::f(const Vector &x) const {
   return sum;
 }
 
-Vector ReducedKleinrockFunction::g(const Vector &x) const{
+Vector ReducedKleinrockFunction::g(Vector &x) const{
   int A = net.arcs.size();
   assert(A == x.size()); // debug
   Vector d(A);
@@ -304,7 +311,7 @@ Vector ReducedKleinrockFunction::g(const Vector &x) const{
   return d;
 }
 
-Vector ReducedKleinrockFunction::gg(const Vector &x) const{
+Vector ReducedKleinrockFunction::gg(Vector &x) const{
   int A = net.arcs.size();
   assert(A == x.size()); // debug
   Vector d(A);
@@ -327,10 +334,10 @@ ReducedKleinrockFunction::ReducedKleinrockFunction(const MultiCommoNetwork &n) :
 
 #define PHI 0.6180339887498948482045868343656
 
-Real golden_section_search ( const Vector &A,
-			     const Vector &B,
-			     Function *obj,
-			     int iterations)
+Real golden_section_search ( Vector &A,
+                             Vector &B,
+                             Function *obj,
+                             int iterations)
 {
   Vector *x1 = new Vector(A), *x4 = new Vector(B);
   Vector *x2 = new Vector(B), *x3 = new Vector(B), *xtmp;
@@ -377,11 +384,11 @@ Real golden_section_search ( const Vector &A,
 
 extern fstream iteration_report;
 
-Real general_section_search ( const Vector &A,
-			      const Vector &B,
-			      Function *obj,
-			      int iterations,
-			      Real b2, Real b3)
+Real general_section_search ( Vector &A,
+                              Vector &B,
+                              Function *obj,
+                              int iterations,
+                              Real b2, Real b3)
 {
   //iteration_report << "general section search" << endl;
   Vector *x1 = new Vector(A), *x4 = new Vector(B);
@@ -431,11 +438,11 @@ Real general_section_search ( const Vector &A,
       if(fm > f3) fm = f3, bm = b3;
     }
     else{
-      fnewbound = (b1-b4)/(b3-b4)*(f3-f4)+f4;
-      if(fnewbound > fbound) fbound = fnewbound;
-
-      xtmp = x4; x4 = x3; x3 = x2; x2 = xtmp;
-      f4 = f3; f3 = f2;
+	    fnewbound = (b1-b4)/(b3-b4)*(f3-f4)+f4;
+	    if(fnewbound > fbound) fbound = fnewbound;
+	    
+	    xtmp = x4; x4 = x3; x3 = x2; x2 = xtmp;
+	    f4 = f3; f3 = f2;
       b4 = b3; b3 = b2;
 
       (*x2) = (*x1); (*x2) += (*x4); (*x2) -= (*x3);
@@ -453,12 +460,12 @@ Real general_section_search ( const Vector &A,
 
 
 // golden search between A and B
-Real section_search ( const Vector &A, 
-		      const Vector &B, 
-		      Function *obj, 
-		      int iterations,
-		      bool to_use_golden_ratio,
-		      Real b1, Real b2)
+Real section_search ( Vector &A, 
+                      Vector &B, 
+                      Function *obj, 
+                      int iterations,
+                      bool to_use_golden_ratio,
+                      Real b1, Real b2)
 {
   // Check whether the function can be reduced (a reducable function)
   // by casting it to ReducableFunction class
@@ -468,12 +475,13 @@ Real section_search ( const Vector &A,
     // If it can be casted --> it is a reducable function
     // then do the search with the reduced function and variables instead
     Function* reduced_obj = casted_obj->reduced_function();
-    Real lambda = section_search( casted_obj->reduced_variable(A), 
-				  casted_obj->reduced_variable(B), 
-				  reduced_obj,
-				  iterations,
-				  to_use_golden_ratio,
-				  b1, b2);
+    Vector A_ = casted_obj->reduced_variable(A);
+    Vector B_ = casted_obj->reduced_variable(B);
+    Real lambda = section_search( A_, B_,
+                                  reduced_obj,
+                                  iterations,
+                                  to_use_golden_ratio,
+                                  b1, b2);
     delete reduced_obj;
     return lambda;
   }
@@ -483,14 +491,14 @@ Real section_search ( const Vector &A,
 }
 
 // Naive line search between A and B
-Real line_search (const Vector &A, const Vector &B, Function *obj, int niteration){
-  Vector x(A), dx(B);
-  Real fmin = obj->f(x), imin = 0.0, f;
-  dx -= A; dx *= (1.0/niteration);
-  FOR(i, niteration){
+Real line_search (Vector &A, Vector &B, Function *obj, int niteration){
+	Vector x(A), dx(B);
+	Real fmin = obj->f(x), imin = 0.0, f;
+	dx -= A; dx *= (1.0/niteration);
+	FOR(i, niteration){
     x += dx;
     f = obj->f(x);
     if(f < fmin) fmin = f, imin = i+1;
-  }
-  return imin / niteration;
+	}
+	return imin / niteration;
 }

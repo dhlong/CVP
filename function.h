@@ -11,13 +11,13 @@ using namespace std;
 class Function{
 public:
   // return value of the function at point x
-  virtual Real f(const Vector &x) const = 0;
+  virtual Real f(Vector &x) const = 0;
 
   // return gradient of the function at point x
-  virtual Vector g(const Vector &x) const = 0;
+  virtual Vector g(Vector &x) const = 0;
 
   // Diagonal of Hessian matrix
-  virtual Vector gg(const Vector &x) const = 0;
+  virtual Vector gg(Vector &x) const = 0;
 
   // destructor
   virtual ~Function() {} ;
@@ -25,8 +25,8 @@ public:
 
 class ReducableFunction : public Function {
  public:
-  virtual Function* reduced_function() const = 0;
-  virtual Vector reduced_variable(const Vector &) const = 0;
+	virtual Function* reduced_function() const = 0;
+  virtual Vector reduced_variable(Vector &) const = 0;
 };
 
 // quartic function with delay propagation
@@ -39,9 +39,9 @@ private:
 
 public:
   QuarticFunction(const Network &n);
-  virtual Real f(const Vector &v) const;
-  virtual Vector g(const Vector &v) const;
-  virtual Vector gg(const Vector &v) const;
+  virtual Real f(Vector &v) const;
+  virtual Vector g(Vector &v) const;
+  virtual Vector gg(Vector &v) const;
 };
 
 // BPR Function on a multi-commodity network
@@ -51,27 +51,27 @@ private:
   Real alpha, beta;
 
 public:
-  virtual Real f(const Vector &x) const;
-  virtual Vector g(const Vector &x) const;
-  virtual Vector gg(const Vector &x) const;
+  virtual Real f(Vector &x) const;
+  virtual Vector g(Vector &x) const;
+  virtual Vector gg(Vector &x) const;
   BPRFunction(const MultiCommoNetwork &n, Real a=0.15, Real b=4);
   MultiCommoNetwork getNetwork() const{
     return net;
   }
-
+  
   virtual Function* reduced_function() const;
-  virtual Vector reduced_variable(const Vector &) const;
+  virtual Vector reduced_variable(Vector &) const;
 };
 
 class ReducedBPRFunction: public Function {
  private:
-  MultiCommoNetwork net;
-  Real alpha, beta;
-
+	MultiCommoNetwork net;
+	Real alpha, beta;
+	
  public:
-  virtual Real f(const Vector &x) const;
-  virtual Vector g(const Vector &x) const;
-  virtual Vector gg(const Vector &x) const;
+  virtual Real f(Vector &x) const;
+  virtual Vector g(Vector &x) const;
+  virtual Vector gg(Vector &x) const;
   ReducedBPRFunction(const MultiCommoNetwork &n, const Real a=0.15, Real b=4);
 };
 
@@ -80,13 +80,13 @@ class KleinrockFunction : public ReducableFunction {
   MultiCommoNetwork net;
 
  public:
-  virtual Real f(const Vector &x) const;
-  virtual Vector g(const Vector &x) const;
-  virtual Vector gg(const Vector &x) const;
+  virtual Real f(Vector &x) const;
+  virtual Vector g(Vector &x) const;
+  virtual Vector gg(Vector &x) const;
   KleinrockFunction(const MultiCommoNetwork &n);  
 
   virtual Function* reduced_function() const;
-  virtual Vector reduced_variable(const Vector &) const;
+  virtual Vector reduced_variable(Vector &) const;
 };
 
 
@@ -95,21 +95,21 @@ class ReducedKleinrockFunction : public Function {
   MultiCommoNetwork net;
 
  public:
-  virtual Real f(const Vector &x) const;
-  virtual Vector g(const Vector &x) const;
-  virtual Vector gg(const Vector &x) const;
+  virtual Real f(Vector &x) const;
+  virtual Vector g(Vector &x) const;
+  virtual Vector gg(Vector &x) const;
   ReducedKleinrockFunction(const MultiCommoNetwork &n);  
 };
 
-Real section_search ( const Vector &x0, 
-		      const Vector &x1, 
-		      Function *obj, 
-		      int iterations = 20,
-		      bool to_use_golden_ratio = true,
-		      Real b1 = 1-PHI, 
-		      Real b2 = PHI);
+Real section_search ( Vector &x0, 
+                      Vector &x1, 
+                      Function *obj, 
+                      int iterations = 20,
+                      bool to_use_golden_ratio = true,
+                      Real b1 = 1-PHI, 
+                      Real b2 = PHI);
 
-Real line_search (const Vector &x0, const Vector &x1, Function *obj, int niteration = 20);
+Real line_search (Vector &x0, Vector &x1, Function *obj, int niteration = 20);
 
 #endif
 

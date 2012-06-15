@@ -19,6 +19,7 @@
 #include <cctype>
 #include <algorithm>
 #include <utility>
+#include "my_sparse_vector.h"
 
 #define EIGEN_YES_I_KNOW_SPARSE_MODULE_IS_NOT_STABLE_YET
 
@@ -26,7 +27,8 @@
 
 #define FOR(i,n) for(int i=0, n_=(n); i<n_; i++)
 #define MALLOC(type, size) (type*) malloc((size)*sizeof(type))
-#define ITER(vec, it) for(Vector::InnerIterator it(vec); it; ++it)
+//#define ITER(vec, it) for(Vector::InnerIterator it(vec); it; ++it)
+#define ITER(vec, it) for(Vector::iterator it = (vec).get_iterator(); !it.end(); ++it)
 #define FREE(var)				\
   do {						\
     if(var) free(var);				\
@@ -34,11 +36,12 @@
   } while(0)
 
 using namespace std;
-using namespace Eigen;
+//using namespace Eigen;
 
 typedef double Real;
-typedef SparseVector<Real> Vector;
+//typedef SparseVector<Real> Vector;
 //typedef vector<Real> Vector;
+typedef MySparseVector Vector;
 typedef int Vertex;
 
 // report error message and terminate the program 
@@ -145,7 +148,7 @@ inline Vector operator *(Real alpha, const Vector &x){
 
 */
 
-bool operator == (const Vector &x, const Vector &y);
+//bool operator == (const Vector &x, const Vector &y);
 
 template <typename T> inline bool updatemin(T &a, T b){
   if(a>b) return a=b, true;

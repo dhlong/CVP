@@ -42,7 +42,7 @@ all: CVP matrix_test CVP_alter
 
 CVP_O = main.o cvp.o network.o function.o dijkstra.o cvputility.o
 MATRIX_TEST_O = matrix_test.o network.o dijkstra.o cvputility.o
-CVP_ALTER_O = network.o dijkstra.o cvputility.o function.o cvp_alter.o
+CVP_ALTER_O = network.o dijkstra.o cvputility.o function.o cvp_alter.o my_sparse_vector.o
 
 # ------------------------------------------------------------
 

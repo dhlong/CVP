@@ -32,20 +32,20 @@ int      *qmatind = NULL;
 double   *qmatval = NULL;
 int      status = 0;
 
-double **z, **p;
+double *z, *p;
 
 fstream iteration_report; // globally-accessed iteration report
 fstream solve_report;     // globally-accessed solve report
 SettingMapper settings;   // globally-accessed setting mapper
 
-bool check_nonnegative(const Vector &x){
+bool check_nonnegative(Vector &x){
 	double max_deviation = 0.0;
 	ITER(x, it)  updatemin(max_deviation, it.value());
 	//cout<<"Non negative deviation = "<<max_deviation<<endl;
 	return max_deviation > -1.0e-6;
 }
 
-bool check_conservation(const MultiCommoNetwork &net,const Vector &x){
+bool check_conservation(const MultiCommoNetwork &net,Vector &x){
 	vector< vector<double> > netflow(K);
 	double max_deviation = 0.0;
 	FOR(k, K) netflow[k] = vector<double>(V, 0.0);
@@ -78,7 +78,7 @@ bool check_conservation(const MultiCommoNetwork &net,const Vector &x){
 	return max_deviation < 1e-6;
 }
 
-bool check_capacity(const MultiCommoNetwork &net, const Vector &x){
+bool check_capacity(const MultiCommoNetwork &net, Vector &x){
 	vector<double> flows(A, 0.0);
 	ITER(x, itx) flows[itx.index()/K] += itx.value();
 	FOR(a,A) if(flows[a] > net.arcs[a].cap){
@@ -88,8 +88,16 @@ bool check_capacity(const MultiCommoNetwork &net, const Vector &x){
 	return true;
 }
 
-void allocate() {
+void init(const MultiCommoNetwork &net){
+	V = net.getNVertex();
+	A = net.arcs.size();
+	K = net.commoflows.size();
+
+	numcols = A; numrows = V; numnz = 2*A; numqnz = A;
+  
 	probname = (char   *) malloc (90      * sizeof(char));   
+	strcpy (probname, "example");
+
 	obj      = (double *) malloc (numcols * sizeof(double));
 	rhs      = (double *) malloc (numrows * sizeof(double));
 	sense    = (char   *) malloc (numrows * sizeof(char)); 
@@ -99,21 +107,6 @@ void allocate() {
 	matval   = (double *) malloc (numnz   * sizeof(double));
 	lb       = (double *) malloc (numcols * sizeof(double));
 	ub       = (double *) malloc (numcols * sizeof(double));
-	qmatbeg  = (int    *) malloc (numcols * sizeof(int)); 
-	qmatcnt  = (int    *) malloc (numcols * sizeof(int)); 
-	qmatind  = (int    *) malloc (numqnz  * sizeof(int)); 
-	qmatval  = (double *) malloc (numqnz  * sizeof(double)); 
-}
-
-void init(const MultiCommoNetwork &net){
-	V = net.getNVertex();
-	A = net.arcs.size();
-	K = net.commoflows.size();
-
-	numcols = A; numrows = V; numnz = 2*A; numqnz = A;
-	allocate();
-  
-	strcpy (probname, "example");
 
 	FOR(v, V) 
 		sense[v] = 'E', 
@@ -129,10 +122,6 @@ void init(const MultiCommoNetwork &net){
 		matind[2*a+1] = net.arcs[a].tail,
 		matval[2*a]   = -1.0,
 		matval[2*a+1] = 1.0,
-		qmatbeg[a]    = a,
-		qmatind[a]    = a, 
-		qmatcnt[a]    = 1, 
-		qmatval[a]    = 2.0;
 
 	assert((env = CPXopenCPLEX (&status)) != NULL);
 	assert((lp  = CPXcreateprob (env, &status, probname)) != NULL);
@@ -143,23 +132,55 @@ void init(const MultiCommoNetwork &net){
 	assert(!CPXcopylp (env, lp, numcols, numrows, CPX_MIN, obj, rhs, 
 	                   sense, matbeg, matcnt, matind, matval,
 	                   lb, ub, NULL));
+
+	FREE(probname);
+	FREE(obj);
+	FREE(rhs);
+	FREE(sense);
+	FREE(matbeg);
+	FREE(matcnt);
+	FREE(matind);
+	FREE(matval);
+	FREE(lb);
+	FREE(ub);
+	
+	qmatbeg  = (int    *) malloc (numcols * sizeof(int)); 
+	qmatcnt  = (int    *) malloc (numcols * sizeof(int)); 
+	qmatind  = (int    *) malloc (numqnz  * sizeof(int)); 
+	qmatval  = (double *) malloc (numqnz  * sizeof(double)); 
+
+	FOR(a, A) 
+		qmatbeg[a]    = a,
+		qmatind[a]    = a, 
+		qmatcnt[a]    = 1, 
+		qmatval[a]    = 2.0;
   
 	assert(!CPXcopyquad (env, lp, qmatbeg, qmatcnt, qmatind, qmatval));
 
-	z = (double**) malloc(K*sizeof(double*));
-	p = (double**) malloc(K*sizeof(double*));
-	FOR(k, K) z[k] = (double*) malloc(A*sizeof(double));
-	FOR(k, K) p[k] = (double*) malloc(A*sizeof(double));
+	FREE(qmatbeg);
+	FREE(qmatcnt);
+	FREE(qmatind);
+	FREE(qmatval);
+
+	z = (double*) malloc(A*sizeof(double));
+	p = (double*) malloc(A*sizeof(double));
 }
 
-void socp(const MultiCommoNetwork &net, const Vector &x0, const Vector &g, Real beta, Vector &p_){
+void release(){
+	FREE(z);
+	FREE(p);
+	CPXcloseCPLEX(&env);
+}
+
+
+void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector &p_){
+	p_ = Vector(A*K);
+
 	typedef pair<int, Real> PAIRIR;
 	typedef list<PAIRIR> LPAIRIR;
 	int *collist = (int*) malloc(A*sizeof(int));
-	double *z = (double*) malloc(A*sizeof(double));
-	double *p = (double*) malloc(A*sizeof(double));
 	vector<LPAIRIR> x(K);
-	vector<LPAIRIR> tmp(A);
+	//vector<LPAIRIR> tmp(A);
 	double rhsval[2];
 	int rhsind[2];
 
@@ -193,42 +214,21 @@ void socp(const MultiCommoNetwork &net, const Vector &x0, const Vector &g, Real 
 
 		for(LPAIRIR::iterator it = x[k].begin(); it != x[k].end(); ++it)
 			z[(*it).first] += 2*(*it).second;
+		x[k].clear();
 
-		FOR(a, A) if(p[a] > 1e-10) tmp[a].push_back(make_pair(k, p[a]));
+		FOR(a, A) if(p[a] > 1e-10) 
+			//tmp[a].push_back(make_pair(k, p[a]));
+			p_.insert(a*K+k) = p[a];
+			
 	}
-  
-	p_ = Vector(A*K);
+	
+	/*
 	FOR(a, A)
 		for(LPAIRIR::iterator it = tmp[a].begin(); it != tmp[a].end(); ++it)
 			p_.insert(a*K+(*it).first) = (*it).second;
+	*/
 
-	FREE(z);
-	FREE(p);
 	FREE(collist);
-}
-
-void release(){
-	FOR(k, K) FREE(z[k]);
-	FOR(k, K) FREE(p[k]);
-	FREE(z);
-	FREE(p);
-	FREE(probname);
-	//cout<<"Mark 2.1"<<endl;
-	//FREE(obj);
-	//cout<<"Mark 2.2"<<endl;
-	FREE(rhs);
-	FREE(sense);
-	FREE(matbeg);
-	FREE(matcnt);
-	FREE(matind);
-	FREE(matval);
-	FREE(lb);
-	FREE(ub);
-	FREE(qmatbeg);
-	FREE(qmatcnt);
-	FREE(qmatind);
-	FREE(qmatval);
-	CPXcloseCPLEX(&env);
 }
 
 void allocate2() {
@@ -332,11 +332,13 @@ void release2(){
 }
 
 void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
+  cout<<"0.1: Mem peak"<<memory_usage()<<endl;
 	Real beta;
 	int count = 0;
 	Timer* timer = new CPUTimer;
 	bool exit_flag = false;
-	Vector x0(A*K), x1(A*K), sp(A*K);
+	Vector x1(A*K), x0(A*K);
+	cout<<"0.2: Mem peak"<<memory_usage()<<endl;
 
 	timer->record();
 
@@ -350,6 +352,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	cout<<"Before dijkstra"<<endl;
 	DA.get_flows(x1);
 	cout<<"After dijkstra"<<endl;
+	cout<<"0.3: Mem peak"<<memory_usage()<<endl;
 
 
 	Real f0, f1 = obj->f(x1); 
@@ -365,37 +368,40 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	TableReport tr("%-4d  %7d     %8.3f   %12.2f"
 	               "%5.3s"
 	               "%8.5f   %8.5f   %8.5f"
-	               "%8.3f %20.10e %20.10e %10.1e  %12.3f");
+	               "%8.3f %20.10e %20.10e %10.1e  %12.3f %20.2f %10d");
 
 	tr.print_header(&iteration_report,
 	                "Iter", "#solve",  "t_total",   "beta",
 	                "ls?", 
 	                "lambda*", "tau*0",     "tau*n",
-	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed");
+	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed", "peak_mem", "NZ");
 	tr.print_header(&cout,
 	                "Iter", "#solve",  "t_total",   "beta",
 	                "ls?", 
 	                "lambda*", "tau*0",     "tau*n",
-	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed");
+	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed", "peak_mem", "NZ");
 
-	Vector g, z, y0;
+	Vector g(A), y0(A);
 	Vector y1(obj->reduced_variable(x1));
-	Function *robj = obj->reduced_function();
+	Function *robj = obj->reduced_function();	
 
 	// Loops
 	Real taubound = -1, taustar = 0.5/5, taustar0 = 1.0;
 	for(int iteration = 1; !exit_flag; iteration++) {
 		timer->record(); // Timming
+		//cout<<"1: Mem peak"<<memory_usage()<<endl;
 
 		if(settings.getb("to reset beta")) 
-			beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
+		  beta = settings.getr("initial beta") * x1.norm();
 
 		// Previous best solution
 		x0 = x1; f0 = f1; y0 = y1;
     
 		// normalized gradient
 		Vector g0 = robj->g(y0);
-		g0 *= (1/sqrt(g0.dot(g0)*K));
+		g0 *= (1/sqrt(g0.squaredNorm()*K));
+
+		//cout<<"2: Mem peak"<<memory_usage()<<endl;
 
 		for(count = 1;; count++) {
 			//z = g; z *= (-beta); z += x0;
@@ -408,18 +414,22 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		}
 
 		y1 = obj->reduced_variable(x1);
-		Vector g1 = robj->g(y1); // g is now gradient at x1
+		Vector g1(robj->g(y1)); // g is now gradient at x
+
+		//cout<<"3: Mem peak"<<memory_usage()<<endl;
 
 		// Optimality check
-		Vector dx = x0 - x1, dy = y0 - y1;
-		Real g1dx = dy.dot(g1), g1g1 = K*g1.dot(g1), dxdx = dx.dot(dx);
-		Real g0dx = dy.dot(g0), g0g1 = K*g0.dot(g1), g0g0 = K*g0.dot(g0);
+		Vector dy(y0); dy -= y1;
+		Real g1dx = g1.dot(dy), g0dx = g0.dot(dy); 
+		Real dxdx = x0.squaredNorm() + x1.squaredNorm() - 2*x0.dot(x1);
+		Real g1g1 = K*g1.squaredNorm(), g0g1 = K*g0.dot(g1), g0g0 = K*g0.squaredNorm();
 		Real cosine = 1 + ( (g1dx - beta*g0g1) /
-		                    sqrt((dxdx -2*beta*g0dx + beta*beta*g0g0)*g1g1) );
+		                    sqrt((dxdx - 2*beta*g0dx + beta*beta*g0g0)*g1g1) );
 		exit_flag = cosine  <= settings.getr("optimality epsilon"); 
     
 		timer->record(); // for timing
 
+		//cout<<"4: Mem peak"<<memory_usage()<<endl;
 
 		// Line Search
 		Real lambda = 1.0;
@@ -428,36 +438,61 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		if(do_line_search){
 			lambda = section_search (y0, y1, robj, 
 			                         settings.geti("line search iterations"));
-			x1 = x0 + lambda*(x1-x0);
-			y1 = y0 + lambda*(y1-y0);
+			//cout<<"4.1: Mem peak"<<memory_usage()<<endl;
+			x1 *= lambda;
+			//cout<<"4.1.1: Mem peak"<<memory_usage()<<endl;
+			x0 *= (1-lambda);
+			//cout<<"4.1.2: Mem peak"<<memory_usage()<<endl;
+			x1 += x0;
+			// x1 = x0 + lambda*(x1-x0);
+			//cout<<"4.2: Mem peak"<<memory_usage()<<endl;
+			y1 -= y0; y1 *= lambda; y1 += y0; // y1 = y0 + lambda*(y1-y0);
 			//x1 -= x0; x1 *= lambda; x1 += x0;
 			f1 = robj->f(y1);
 		}
     
 		timer->record(); // for timing
 		Real f_ls = f1; // for reporting
+		//cout<<"5: Mem peak"<<memory_usage()<<endl;
 
 		double tau = taustar0*20;
 		updatemin(tau, 1.0);
 		FOR(iter, settings.geti("SP iterations per SOCP")) {
 			g1 = robj->g(y1);
 			DA.reset_cost();
+			//cout<<"5.1: Mem peak"<<memory_usage()<<endl;
+
 			ITER(g1, itg1)
 				DA.set_cost ( net.arcs[itg1.index()].head,
 				              net.arcs[itg1.index()].tail,
 				              cost_t(itg1.value()));
-			DA.get_flows(sp);
-			Vector ysp(obj->reduced_variable(sp));
+			//cout<<"5.2: Mem peak"<</*memory_usage()<<*/endl;
+			DA.get_flows(x0);
+			//cout<<"5.3: Mem peak"<<memory_usage()<<endl;
+			Vector ysp(obj->reduced_variable(x0));
 
 			taustar = section_search(y1, ysp, robj, 
 			                         settings.geti("line search iterations"),
 			                         false, tau*(1-PHI), tau*PHI);
+			//cout<<"5.4: Mem peak"<<memory_usage()<<endl;
 
-			x1 += taustar * (sp  - x1);  //x1 -= sp;  x1 *= (1-taustar); x1 += sp; 
-			y1 += taustar * (ysp - y1); //y1 -= ysp; y1 *= (1-taustar); y1 += ysp;
+			//x1 += taustar * (x0  - x1);  
+			//x1 -= x0;  x1 *= (1-taustar); x1 += x0; 
+			//cout<<"   NZ before = "<<x1.nonZeros()<<endl;
+			x1 *= (1-taustar);
+			//cout<<"5.5: Mem peak"<<memory_usage()<<endl;
+			x0 *= taustar;
+			//cout<<"5.6: Mem peak"<<memory_usage()<<endl;
+			x1 += x0;
+			//cout<<"5.7: Mem peak"<<memory_usage()<<endl;
+			//cout<<"  NZ after = "<<x1.nonZeros()<<endl;
+			//y1 += taustar * (ysp - y1); 
+			y1 -= ysp; y1 *= (1-taustar); y1 += ysp;
 
 			if(iter == 0) taustar0 = taustar;
 		}
+		//cout<<"6: Mem peak"<<memory_usage()<<endl;
+
     
 		f1 = robj->f(y1);
 		// Timing and Reporting
@@ -466,13 +501,15 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		              iteration, count, timer->elapsed(-1,-4), beta,
 		              (do_line_search?"YES":"NO"), 
 		              lambda, taustar0, taustar,
-		              timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1));
+		              timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1),
+		              memory_usage(), x1.nonZeros());
 
 		tr.print_row (&cout,
 		              iteration, count, timer->elapsed(-1,-4), beta,
 		              (do_line_search?"YES":"NO"), 
 		              lambda, taustar0, taustar,
-		              timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1));
+		              timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1),
+		              memory_usage(), x1.nonZeros());
 		if(taustar == 0.0) taustar = 1.0; 
       
 	}
@@ -487,6 +524,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	iteration_report << "Optimal objective = " 
 	                 << scientific << setprecision(12) << obj->f(x1)
 	                 << endl;
+	delete robj;
 	delete timer;
 }
 
@@ -518,7 +556,7 @@ void solve_KL(const MultiCommoNetwork &net){
 	TableReport tr("%-4d  %7d     %8.3f   %12.2f"
 	               "%5.3s"
 	               "%8.5f   %8.5f   %8.5f"
-	               "%8.3f %20.10e %20.10e %10.1e  %12.3f");
+	               "%8.3f %20.10e %20.10e %10.1e  %12.3f %10.2f");
 
 	tr.print_header(&iteration_report,
 	                "Iter", "#solve",  "t_total",   "beta",
@@ -529,9 +567,9 @@ void solve_KL(const MultiCommoNetwork &net){
 	                "Iter", "#solve",  "t_total",   "beta",
 	                "ls?", 
 	                "lambda*", "tau*0",     "tau*n",
-	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed");
+	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed", "peak_mem");
 
-	Vector g, z, y0;
+	Vector g(A*K), z(A*K), y0(A*K);
 	Vector y1(obj->reduced_variable(x1));
 	Function *robj = obj->reduced_function();
 
@@ -554,13 +592,14 @@ void solve_KL(const MultiCommoNetwork &net){
 		g *= (1/sqrt(g.dot(g)));
 
 		for(count = 1;;count++) {
-			//z = g; z *= (-beta); z += x0;
-			z = x0 - beta*g;
+			z = g; z *= (-beta); z += x0;
+			//z = x0 - beta*g;
 			//socp(net, z, x1);
 			if(check_capacity(net, x1)){
 				f1 = obj->f(x1);
 				if(f1 < f0) break;
-				if((x0-x1).dot(obj->g(x1)) < 0) break;
+				Vector g1(obj->g(x1));
+				if(x0.dot(g1) - x1.dot(g1) < 0) break;
 			}
 			beta *= settings.getr("beta down factor");
 		}
@@ -578,13 +617,14 @@ void solve_KL(const MultiCommoNetwork &net){
 		// Line Search
 		Real lambda = 1.0;
 		bool do_line_search = ( settings.getb("to do line search") && 
-		                        g.dot(x0-x1)<0 );
+		                        g.dot(x0)-g.dot(x1)<0 );
 		if(do_line_search){
 			lambda = section_search (y0, y1, robj, 
 			                         settings.geti("line search iterations"));
-			x1 = x0 + lambda*(x1-x0);
-			y1 = y0 + lambda*(y1-y0);
-			//x1 -= x0; x1 *= lambda; x1 += x0;
+			//x1 = x0 + lambda*(x1-x0);
+			//y1 = y0 + lambda*(y1-y0);
+			x1 -= x0; x1 *= lambda; x1 += x0;
+			y1 -= y0; y1 *= lambda; y1 += y0;
 			f1 = robj->f(y1);
 		}
     
@@ -608,8 +648,10 @@ void solve_KL(const MultiCommoNetwork &net){
 			                         settings.geti("line search iterations"),
 			                         false, tau*(1-PHI), tau*PHI);
 
-			x1 += taustar*(sp-x1);  //x1 -= sp;  x1 *= (1-taustar); x1 += sp; 
-			y1 += taustar*(ysp-y1); //y1 -= ysp; y1 *= (1-taustar); y1 += ysp;
+			//x1 += taustar*(sp-x1);  
+			x1 -= sp;  x1 *= (1-taustar); x1 += sp; 
+			//y1 += taustar*(ysp-y1); 
+			y1 -= ysp; y1 *= (1-taustar); y1 += ysp;
 
 			if(iter == 0) taustar0 = taustar;
 		}
@@ -627,7 +669,7 @@ void solve_KL(const MultiCommoNetwork &net){
 		             iteration, count, timer->elapsed(-1,-4), beta,
 		             (do_line_search?"YES":"NO"), 
 		             lambda, taustar0, taustar,
-		             timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1));
+		             timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1), memory_usage());
 		if(taustar == 0.0) taustar = 1.0;     
 	}
   
@@ -645,6 +687,7 @@ void solve_KL(const MultiCommoNetwork &net){
 }
 
 int main(){
+  cout<<"&1: Mem peak"<<memory_usage()<<endl;
 	Timer *timer = new CPUTimer;
   
 	// get the system date and time
@@ -664,6 +707,8 @@ int main(){
 
 	// start the timer
 	timer->record();
+	cout<<"&2: Mem peak"<<memory_usage()<<endl;
+
 
 	// Reading settings from file "CVP.ini"
 	string ininame = "CVP.ini";
@@ -696,14 +741,18 @@ int main(){
 		format = TNTP;
   
 	MultiCommoNetwork net(inputname.c_str(), format);
-  
+	cout<<"&3: Mem peak"<<memory_usage()<<endl;
+
 	cout<<"Solving"<<endl;
 	timer->record();
 
 	if(settings.gets("Function") == "bpr"){
 		init(net);
+		cout<<"&4: Mem peak"<<memory_usage()<<endl;
 		BPRFunction *obj = new BPRFunction(net);
+		cout<<"&5: Mem peak"<<memory_usage()<<endl;
 		solve(net,obj);
+		cout<<"&6: Mem peak"<<memory_usage()<<endl;
 		release();
 		delete obj;
 	}
@@ -726,7 +775,6 @@ int main(){
 	solve_report.close();
 
 	delete timer;
-	delete obj;
 	return 0;
 }
 

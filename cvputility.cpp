@@ -212,6 +212,7 @@ void SettingMapper::report(fstream &f){
     f<<"\t"<<setw(50)<<left<<(*it).first<<" = "<<(*it).second<<endl;
 }
 
+/*
 bool operator == (const Vector &x, const Vector &y){
   Vector::InnerIterator itx(x), ity(y);
   for(; itx && ity; ++itx, ++ity){
@@ -222,6 +223,7 @@ bool operator == (const Vector &x, const Vector &y){
   if(ity) return false;
   return true;
 }
+*/
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -311,6 +313,9 @@ double memory_usage(int peak){
 
   if(peak == 1) strcpy(query, "VmPeak:");
   else strcpy(query, "VmSize:");
+  
+  if(file == NULL)
+	  return -1.0;
 
   while (fgets(line, 300, file) != NULL)
     if ((match = strstr(line, query)) != NULL)
