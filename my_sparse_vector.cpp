@@ -13,7 +13,7 @@ MySparseVector::iterator MySparseVector::get_iterator(){
 }
 
 void MySparseVector::sort(){
-  if(!sorted) val.sort();
+	if(!sorted) val.sort();
   sorted = true;
 }
 
@@ -50,6 +50,7 @@ MySparseVector& MySparseVector::operator -= (MySparseVector &x){
   assert(x.size_ == size_);
   sort(); x.sort();
   list< pair<int, double> >::iterator it = val.begin(), itx = x.val.begin();
+
   
   while(it != val.end() && itx != x.val.end()){
     if(it->first == itx->first){
@@ -208,26 +209,3 @@ double& MySparseVector::coeffRef(int i){
 	return (*this)[i];
 }
 
-/*
-
-int main(){
-	
-  MySparseVector x(19), y(19);
-  x.insert(3) = 4.0;
-  x.insert(2) = 3.0;
-  y.insert(2) = 3.0;
-  y.insert(6) = -4.0;
-  //x *= 3;
-  //x -= y;
-  //for(MySparseVector::iterator it = x.get_iterator(); !it.end(); ++it)
-  //  cout<<"["<<it->first<<"] = "<<it->second<<endl;
-  x.output();
-  y.output();
-  cout<<"dot = "<<x.dot(y)<<endl;
-  cout<<"norm x = "<<x.norm()<<endl;
-  cout<<"norm y = "<<y.norm()<<endl;
-	
-  return 0;
-}
-
-*/

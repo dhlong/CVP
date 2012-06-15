@@ -73,8 +73,6 @@ bool check_conservation(const MultiCommoNetwork &net,Vector &x){
 			updatemax(max_deviation, fabs(netflow[k][v]));
 		}
 	
-	//cout<<"Max deviation from conservation = "<<max_deviation<<endl;
-	
 	return max_deviation < 1e-6;
 }
 
@@ -123,7 +121,7 @@ void init(const MultiCommoNetwork &net){
 		matval[2*a]   = -1.0,
 		matval[2*a+1] = 1.0,
 
-	assert((env = CPXopenCPLEX (&status)) != NULL);
+		assert((env = CPXopenCPLEX (&status)) != NULL);
 	assert((lp  = CPXcreateprob (env, &status, probname)) != NULL);
     
 	assert(!CPXsetintparam (env, CPX_PARAM_SCRIND, CPX_OFF));
@@ -180,7 +178,7 @@ void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector
 	typedef list<PAIRIR> LPAIRIR;
 	int *collist = (int*) malloc(A*sizeof(int));
 	vector<LPAIRIR> x(K);
-	//vector<LPAIRIR> tmp(A);
+	vector<LPAIRIR> tmp(A);
 	double rhsval[2];
 	int rhsind[2];
 
@@ -217,16 +215,15 @@ void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector
 		x[k].clear();
 
 		FOR(a, A) if(p[a] > 1e-10) 
-			//tmp[a].push_back(make_pair(k, p[a]));
-			p_.insert(a*K+k) = p[a];
+			tmp[a].push_back(make_pair(k, p[a]));
+		//p_.insert(a*K+k) = p[a];
 			
 	}
 	
-	/*
+	
 	FOR(a, A)
 		for(LPAIRIR::iterator it = tmp[a].begin(); it != tmp[a].end(); ++it)
 			p_.insert(a*K+(*it).first) = (*it).second;
-	*/
 
 	FREE(collist);
 }
@@ -332,13 +329,11 @@ void release2(){
 }
 
 void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
-  cout<<"0.1: Mem peak"<<memory_usage()<<endl;
 	Real beta;
 	int count = 0;
 	Timer* timer = new CPUTimer;
 	bool exit_flag = false;
 	Vector x1(A*K), x0(A*K);
-	cout<<"0.2: Mem peak"<<memory_usage()<<endl;
 
 	timer->record();
 
@@ -349,11 +344,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		            net.arcs[a].tail, 
 		            cost_t(net.arcs[a].cost));
 
-	cout<<"Before dijkstra"<<endl;
 	DA.get_flows(x1);
-	cout<<"After dijkstra"<<endl;
-	cout<<"0.3: Mem peak"<<memory_usage()<<endl;
-
 
 	Real f0, f1 = obj->f(x1); 
 	beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
@@ -381,7 +372,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	                "lambda*", "tau*0",     "tau*n",
 	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed", "peak_mem", "NZ");
 
-	Vector g(A), y0(A);
+	Vector g0(A), g1(A), y0(A);
 	Vector y1(obj->reduced_variable(x1));
 	Function *robj = obj->reduced_function();	
 
@@ -389,34 +380,29 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	Real taubound = -1, taustar = 0.5/5, taustar0 = 1.0;
 	for(int iteration = 1; !exit_flag; iteration++) {
 		timer->record(); // Timming
-		//cout<<"1: Mem peak"<<memory_usage()<<endl;
 
 		if(settings.getb("to reset beta")) 
-		  beta = settings.getr("initial beta") * x1.norm();
+			beta = settings.getr("initial beta") * x1.norm();
 
 		// Previous best solution
 		x0 = x1; f0 = f1; y0 = y1;
     
 		// normalized gradient
-		Vector g0 = robj->g(y0);
+		g0 = robj->g(y0);
 		g0 *= (1/sqrt(g0.squaredNorm()*K));
 
-		//cout<<"2: Mem peak"<<memory_usage()<<endl;
-
 		for(count = 1;; count++) {
-			//z = g; z *= (-beta); z += x0;
-			//z = x0 - beta*g;
 			socp(net, x0, g0, beta, x1);
 			f1 = obj->f(x1);
 			if(f1 < f0) break;
-			//if((x0-x1).dot(obj->g(x1)) < 0) break;
+			//g1 = robj->g(y1);
+			//y1 = obj->reduced_variable(x1);
+			//if(y0.dot(g1) - y1.dot(g1) < 0) break;
 			beta *= settings.getr("beta down factor");
 		}
 
 		y1 = obj->reduced_variable(x1);
-		Vector g1(robj->g(y1)); // g is now gradient at x
-
-		//cout<<"3: Mem peak"<<memory_usage()<<endl;
+		g1 = robj->g(y1); // g is now gradient at x
 
 		// Optimality check
 		Vector dy(y0); dy -= y1;
@@ -425,11 +411,9 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		Real g1g1 = K*g1.squaredNorm(), g0g1 = K*g0.dot(g1), g0g0 = K*g0.squaredNorm();
 		Real cosine = 1 + ( (g1dx - beta*g0g1) /
 		                    sqrt((dxdx - 2*beta*g0dx + beta*beta*g0g0)*g1g1) );
-		exit_flag = cosine  <= settings.getr("optimality epsilon"); 
-    
-		timer->record(); // for timing
 
-		//cout<<"4: Mem peak"<<memory_usage()<<endl;
+		exit_flag = cosine  <= settings.getr("optimality epsilon");     
+		timer->record(); // for timing
 
 		// Line Search
 		Real lambda = 1.0;
@@ -438,63 +422,37 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		if(do_line_search){
 			lambda = section_search (y0, y1, robj, 
 			                         settings.geti("line search iterations"));
-			//cout<<"4.1: Mem peak"<<memory_usage()<<endl;
-			x1 *= lambda;
-			//cout<<"4.1.1: Mem peak"<<memory_usage()<<endl;
-			x0 *= (1-lambda);
-			//cout<<"4.1.2: Mem peak"<<memory_usage()<<endl;
-			x1 += x0;
-			// x1 = x0 + lambda*(x1-x0);
-			//cout<<"4.2: Mem peak"<<memory_usage()<<endl;
-			y1 -= y0; y1 *= lambda; y1 += y0; // y1 = y0 + lambda*(y1-y0);
-			//x1 -= x0; x1 *= lambda; x1 += x0;
+			x1 *= lambda; x0 *= (1-lambda); x1 += x0;
+			y1 *= lambda; y0 *= (1-lambda); y1 += y0;
 			f1 = robj->f(y1);
 		}
     
 		timer->record(); // for timing
 		Real f_ls = f1; // for reporting
-		//cout<<"5: Mem peak"<<memory_usage()<<endl;
 
 		double tau = taustar0*20;
 		updatemin(tau, 1.0);
 		FOR(iter, settings.geti("SP iterations per SOCP")) {
 			g1 = robj->g(y1);
 			DA.reset_cost();
-			//cout<<"5.1: Mem peak"<<memory_usage()<<endl;
 
 			ITER(g1, itg1)
 				DA.set_cost ( net.arcs[itg1.index()].head,
 				              net.arcs[itg1.index()].tail,
 				              cost_t(itg1.value()));
-			//cout<<"5.2: Mem peak"<</*memory_usage()<<*/endl;
 			DA.get_flows(x0);
-			//cout<<"5.3: Mem peak"<<memory_usage()<<endl;
-			Vector ysp(obj->reduced_variable(x0));
+			y0 = obj->reduced_variable(x0);
 
-			taustar = section_search(y1, ysp, robj, 
+			taustar = section_search(y1, y0, robj, 
 			                         settings.geti("line search iterations"),
 			                         false, tau*(1-PHI), tau*PHI);
-			//cout<<"5.4: Mem peak"<<memory_usage()<<endl;
-
-			//x1 += taustar * (x0  - x1);  
-			//x1 -= x0;  x1 *= (1-taustar); x1 += x0; 
-			//cout<<"   NZ before = "<<x1.nonZeros()<<endl;
-			x1 *= (1-taustar);
-			//cout<<"5.5: Mem peak"<<memory_usage()<<endl;
-			x0 *= taustar;
-			//cout<<"5.6: Mem peak"<<memory_usage()<<endl;
-			x1 += x0;
-			//cout<<"5.7: Mem peak"<<memory_usage()<<endl;
-			//cout<<"  NZ after = "<<x1.nonZeros()<<endl;
-			//y1 += taustar * (ysp - y1); 
-			y1 -= ysp; y1 *= (1-taustar); y1 += ysp;
-
+			x1 *= (1-taustar); x0 *= taustar; x1 += x0;
+			y1 *= (1-taustar); y0 *= taustar; y1 += y0;
 			if(iter == 0) taustar0 = taustar;
 		}
-		//cout<<"6: Mem peak"<<memory_usage()<<endl;
-
     
 		f1 = robj->f(y1);
+
 		// Timing and Reporting
 		timer->record();
 		tr.print_row (&iteration_report,
@@ -510,6 +468,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		              lambda, taustar0, taustar,
 		              timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1),
 		              memory_usage(), x1.nonZeros());
+
 		if(taustar == 0.0) taustar = 1.0; 
       
 	}
@@ -687,7 +646,7 @@ void solve_KL(const MultiCommoNetwork &net){
 }
 
 int main(){
-  cout<<"&1: Mem peak"<<memory_usage()<<endl;
+	cout<<"&1: Mem peak"<<memory_usage()<<endl;
 	Timer *timer = new CPUTimer;
   
 	// get the system date and time
