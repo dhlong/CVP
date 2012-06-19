@@ -416,7 +416,7 @@ Real general_section_search ( Vector &A,
 
 		// safe guard the case where x2 and x3 are too close to each other
 		if(fabs(b2-b3)<1e-12 && fabs(f2-f3) < 1e-6){
-			iteration_report << "x2 and x3 too close"<<endl;
+			iteration_report << "x2 and x3 too close at iteration "<<i<<endl;
 			(*x3) -= (*x4); (*x3) *= (PHI-1); (*x3) += (*x2);
 			f3 = obj->f(*x3);
 			b3 -= b4; b3 *= (PHI-1); b3 += b2;
@@ -451,7 +451,7 @@ Real general_section_search ( Vector &A,
 
 			if(fm > f2) fm = f2, bm = b2;
 		}
-		//if(fabs(fbound-fm)/(fbound+fm) < 0.5*1e-8) break;
+		if(fabs(fbound-fm)/(fbound+fm) < 0.5*1e-9) break;
 	}  
 
 	delete x1; delete x2; delete x3; delete x4;
