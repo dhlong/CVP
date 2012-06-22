@@ -88,7 +88,7 @@ class ShortestPathOracle{
 		has_solved = false;
 	}
 
-	void get_flows(Vector &sp);
+	void get_flows(Vector &sp, bool use_tmp = false);
 };
 
 #endif

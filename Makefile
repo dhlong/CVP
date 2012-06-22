@@ -12,7 +12,7 @@ LIBFORMAT  = static_pic
 CPLEXDIR      = /app1/ia32-64/iLog/cplex101
 CONCERTDIR    = /app1/ia32-64/iLog/concert23
 EIGENDIR      = /home/svu/isedhl/eigen-eigen-6e7488e20373
-GRBDIR        = /home/svu/isedhl/gurobi500/linux64/
+GRBDIR        = /home/svu/isedhl/gurobi500/linux64
 # ---------------------------------------------------------------------
 # Compiler selection 
 # ---------------------------------------------------------------------
@@ -32,12 +32,12 @@ CCOPT = -O3 -fPIC -fexceptions -DIL_STD -g
 
 CPLEXLIBDIR   = $(CPLEXDIR)/lib/$(SYSTEM)/$(LIBFORMAT)
 CONCERTLIBDIR = $(CONCERTDIR)/lib/$(SYSTEM)/$(LIBFORMAT)
-GRBLIBLIB     = $(GRBDIR)/bin
+GRBLIBDIR     = $(GRBDIR)/lib
 CONCERTINCDIR = $(CONCERTDIR)/include
 CPLEXINCDIR   = $(CPLEXDIR)/include
 GRBINCDIR     = $(GRBDIR)/include
 
-CCLNFLAGS = -L$(CPLEXLIBDIR) -lilocplex -lcplex -L$(CONCERTLIBDIR) -lconcert -L$(GRBLIBDIR) -lgurobi50 -lm -lpthread 
+CCLNFLAGS = -L$(CPLEXLIBDIR) -lilocplex -lcplex -L$(CONCERTLIBDIR) -lconcert -L$(GRBLIBDIR) -lgurobi50 -lgurobi_c++ -lm -lpthread 
 
 CCFLAGS = $(CCOPT) -I$(CPLEXINCDIR) -I$(CONCERTINCDIR) -I$(EIGENDIR) -I$(GRBINCDIR)
 
@@ -65,7 +65,7 @@ matrix_test: $(MATRIX_TEST_O)
 	@$(CCC) $(CCFLAGS) $(MATRIX_TEST_O) -o $@ $(CCLNFLAGS) -lrt
 CVP_alter: $(CVP_ALTER_O)
 	@echo Compiling CVP Alter
-	@$(CCC) $(CCFLAGS) $(CVP_ALTER_O) -o $@ $(CCLNFLAGS) -lrt
+	$(CCC) $(CCFLAGS) $(CVP_ALTER_O) -o $@ $(CCLNFLAGS) -lrt
 %.o: %.cpp
 	@echo Compiling $<
 	@$(CCC) -c $(CCFLAGS) $< -o $@

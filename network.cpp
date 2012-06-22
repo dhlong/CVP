@@ -280,23 +280,30 @@ void ShortestPathOracle::solve(){
 	has_solved = true;
 }
 
-void ShortestPathOracle::get_flows(Vector &sp) {
+void ShortestPathOracle::get_flows(Vector &sp, bool use_tmp) {
 	sp *= 0.0;
-	vector< pair<arc_t, int> > paths;
+	vector< list<arc_t> > *paths = use_tmp ? new vector< list<arc_t> >(A) : NULL;
 	if(!has_solved) solve();
 
 	FOR(k, K){
 		int u = net.commoflows[k].origin, v = net.commoflows[k].destination;
 		Real demand = net.commoflows[k].demand;
-		while(v>=0 && v!=u){
-			paths.push_back(make_pair(indexarcl [trace[u][v]] [v], k));
-			//sp.insert(indexarcl[trace[u][v]][v]*K + k) = demand;
-			v = trace[u][v];
-		}
+		if(use_tmp)
+			while(v>=0 && v!=u){
+				(*paths)[indexarcl[trace[u][v]] [v]].push_back(k);
+				v = trace[u][v];
+			}
+		else
+			while(v>=0 && v!=u){
+				sp.insert(indexarcl[trace[u][v]][v]*K + k) = demand;
+				v = trace[u][v];
+			}
 	}
   
-	sort(paths.begin(), paths.end());
-	FOR(i, paths.size()) 
-		sp.insert(paths[i].first*K + paths[i].second) 
-		= net.commoflows[paths[i].second].demand;
+	if(use_tmp){
+		FOR(a, A)
+			for(list<arc_t>::iterator it = (*paths)[a].begin(); it != (*paths)[a].end(); ++it)
+				sp.insert(a*K + *it) = net.commoflows[*it].demand;
+		delete paths;
+	}
 }

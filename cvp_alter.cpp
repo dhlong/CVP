@@ -128,7 +128,10 @@ void init(const MultiCommoNetwork &net){
 		matval[2*a]   = -1.0,
 	  matval[2*a+1] = 1.0;
 
-	solver = new CPXSolver();
+	if(settings.gets("Solver")=="cplex")
+		solver = new CPXSolver();
+	else
+		solver = new GRBSolver();
 
 	solver->copylp (numcols, numrows, CPX_MIN, obj, rhs, 
 	                sense, matbeg, matcnt, matind, matval,
@@ -176,12 +179,13 @@ void release(){
 
 void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector &p_){
 	p_ = Vector(A*K);
+	bool use_tmp = settings.geti("memory parsimony level")>=1;
 
 	typedef pair<int, Real> PAIRIR;
 	typedef list<PAIRIR> LPAIRIR;
 	int *collist = (int*) malloc(A*sizeof(int));
 	vector<LPAIRIR> x(K);
-	vector<LPAIRIR> tmp(A);
+	vector<LPAIRIR> *tmp = use_tmp? new vector<LPAIRIR>(A) : NULL;
 	double rhsval[2];
 	int rhsind[2];
 
@@ -190,8 +194,6 @@ void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector
 
 	ITER(x0, itx0)
 		x[itx0.index()%K].push_back(make_pair(itx0.index()/K, itx0.value()));
-
-	//ITER(z_, itz) z[itz.index()%K][itz.index()/K] = -2*itz.value();
 
 	FOR(a, A) collist[a] = a;
   
@@ -217,15 +219,21 @@ void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector
 			z[(*it).first] += 2*(*it).second;
 		x[k].clear();
 
-		FOR(a, A) if(p[a] > 1e-10) 
-			tmp[a].push_back(make_pair(k, p[a]));
-		//p_.insert(a*K+k) = p[a];
+		if(use_tmp) 
+			FOR(a, A) 
+				if(p[a] > 1e-10) (*tmp)[a].push_back(make_pair(k, p[a])); 
+				else;
+		else 
+			FOR(a,A) 
+				p_.insert(a*K+k) = p[a];
 	}
 	
-	
-	FOR(a, A)
-		for(LPAIRIR::iterator it = tmp[a].begin(); it != tmp[a].end(); ++it)
-			p_.insert(a*K+(*it).first) = (*it).second;
+	if(use_tmp){
+		FOR(a, A)
+			for(LPAIRIR::iterator it = (*tmp)[a].begin(); it != (*tmp)[a].end(); ++it)
+				p_.insert(a*K+(*it).first) = (*it).second;
+		delete tmp;
+	}
 
 	FREE(collist);
 }
@@ -346,7 +354,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		            net.arcs[a].tail, 
 		            cost_t(net.arcs[a].cost));
 
-	DA.get_flows(x1);
+	DA.get_flows(x1, settings.geti("memory parsimony level")>=2);
 
 	Real f0, f1 = obj->f(x1); 
 	beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
@@ -443,7 +451,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 					DA.set_cost ( net.arcs[itg1.index()].head,
 					              net.arcs[itg1.index()].tail,
 					              cost_t(itg1.value()));
-				DA.get_flows(x0);
+				DA.get_flows(x0, settings.geti("memory parsimony level")>=2);
 				y0 = obj->reduced_variable(x0);
 				
 				taustar = section_search(y1, y0, robj, 
