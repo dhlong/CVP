@@ -94,10 +94,6 @@ bool check_capacity(const MultiCommoNetwork &net, Vector &x){
 }
 
 void init(const MultiCommoNetwork &net){
-	V = net.getNVertex();
-	A = net.arcs.size();
-	K = net.commoflows.size();
-
 	numcols = A; numrows = V; numnz = 2*A; numqnz = A;
   
 	probname = (char   *) malloc (90      * sizeof(char));   
@@ -179,13 +175,13 @@ void release(){
 
 void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector &p_){
 	p_ = Vector(A*K);
-	bool use_tmp = settings.geti("memory parsimony level")>=1;
+	bool use_tmp = settings.geti("memory parsimony level")<=1;
 
 	typedef pair<int, Real> PAIRIR;
 	typedef list<PAIRIR> LPAIRIR;
 	int *collist = (int*) malloc(A*sizeof(int));
 	vector<LPAIRIR> x(K);
-	vector<LPAIRIR> *tmp = use_tmp? new vector<LPAIRIR>(A) : NULL;
+	LPAIRIR *tmp = use_tmp? new LPAIRIR[A] : NULL;
 	double rhsval[2];
 	int rhsind[2];
 
@@ -221,18 +217,20 @@ void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector
 
 		if(use_tmp) 
 			FOR(a, A) 
-				if(p[a] > 1e-10) (*tmp)[a].push_back(make_pair(k, p[a])); 
+				if(p[a] > 1e-10) tmp[a].push_back(make_pair(k, p[a])); 
 				else;
 		else 
 			FOR(a,A) 
-				p_.insert(a*K+k) = p[a];
+				if(p[a] > 1e-10) p_.insert(a*K+k) = p[a];
 	}
 	
 	if(use_tmp){
-		FOR(a, A)
-			for(LPAIRIR::iterator it = (*tmp)[a].begin(); it != (*tmp)[a].end(); ++it)
+		FOR(a, A){
+			for(LPAIRIR::iterator it = tmp[a].begin(); it != tmp[a].end(); ++it)
 				p_.insert(a*K+(*it).first) = (*it).second;
-		delete tmp;
+			tmp[a].clear();
+		}
+		delete[] tmp;
 	}
 
 	FREE(collist);
@@ -293,6 +291,7 @@ Vector init2(const MultiCommoNetwork &net){
 		matval[3*i + 2*k]     = net.commoflows[k].demand,
 		matval[3*i + 2*k + 1] = -net.commoflows[k].demand;
 
+	/*
 	assert((env = CPXopenCPLEX (&status)) != NULL);
 	assert((lp  = CPXcreateprob (env, &status, probname)) != NULL);
     
@@ -302,28 +301,13 @@ Vector init2(const MultiCommoNetwork &net){
 	assert(!CPXcopylp (env, lp, numcols, numrows, CPX_MAX, obj, rhs, 
 	                   sense, matbeg, matcnt, matind, matval,
 	                   lb, ub, NULL));
-  
-	double* p = (double *) malloc(A*K*sizeof(double ));
-	double lambda = 1.0;
+	*/
 
-	assert(!CPXbaropt (env, lp));  
-	CPXwriteprob(env, lp, "concur.rlp", NULL);
-	int statind = CPXgetstat (env, lp);
-	char buffer[100];
-	char* ptr = CPXgetstatstring (env, statind, buffer);
-	cout<<ptr<<endl;
+	solver = new CPXSolver;
+	solver->copylp(numcols, numrows, CPX_MAX, obj, rhs, 
+	               sense, matbeg, matcnt, matind, matval,
+	               lb, ub);
 
-	assert(!CPXgetx(env, lp, p, 0, A*K-1));
-	assert(!CPXgetx(env, lp, &lambda, A*K, A*K));
-	assert(lambda >= 1.0);
-
-	Vector x0(A*K);
-	FOR(i, A*K) if(p[i] > 1e-8) x0.insert(i) = p[i]/lambda;
-	FREE(p);
-	return x0;
-}
-
-void release2(){
 	FREE(probname);
 	FREE(obj);
 	FREE(rhs);
@@ -334,27 +318,65 @@ void release2(){
 	FREE(matval);
 	FREE(lb);
 	FREE(ub);
-	CPXcloseCPLEX(&env);
-	env = NULL; lp = NULL;
+
+	solver->solve();
+
+	double* p = (double *) malloc(A*K*sizeof(double ));
+	double lambda = 1.0;
+
+	//assert(!CPXbaropt (env, lp));  
+	//CPXwriteprob(env, lp, "concur.rlp", NULL);
+	//int statind = CPXgetstat (env, lp);
+	//char buffer[100];
+	//char* ptr = CPXgetstatstring (env, statind, buffer);
+	//cout<<ptr<<endl;
+
+	//assert(!CPXgetx(env, lp, p, 0, A*K-1));
+	//assert(!CPXgetx(env, lp, &lambda, A*K, A*K));
+
+	solver->getx(p, 0, A*K-1);
+	solver->getx(&lambda, A*K, A*K);
+	assert(lambda >= 1.0);
+
+	delete solver;
+	solver = NULL;
+
+	Vector x0(A*K);
+	FOR(i, A*K) if(p[i] > 1e-8) x0.insert(i) = p[i]/lambda;
+	FREE(p);
+	return x0;
+}
+
+void release2(){
 }
 
 void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
+	V = net.getNVertex();
+	A = net.arcs.size();
+	K = net.commoflows.size();
+
 	Real beta;
 	int count = 0;
 	Timer* timer = new CPUTimer;
 	bool exit_flag = false;
 	Vector x1(A*K), x0(A*K);
+	ShortestPathOracle DA(net);
 
 	timer->record();
 
 	// Initialisation by solving the intial network shortest paths
-	ShortestPathOracle DA(net);
-	FOR(a, A)
-		DA.set_cost(net.arcs[a].head, 
-		            net.arcs[a].tail, 
-		            cost_t(net.arcs[a].cost));
-
-	DA.get_flows(x1, settings.geti("memory parsimony level")>=2);
+	if(settings.gets("Function")=="bpr") {
+		FOR(a, A)
+			DA.set_cost(net.arcs[a].head, 
+			            net.arcs[a].tail, 
+			            cost_t(net.arcs[a].cost));
+	
+		DA.get_flows(x1, settings.geti("memory parsimony level")<=0);
+	}
+	else{
+		x1 = init2(net);
+		release2();
+	}
 
 	Real f0, f1 = obj->f(x1); 
 	beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
@@ -386,6 +408,8 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	Vector y1(obj->reduced_variable(x1));
 	Function *robj = obj->reduced_function();	
 
+	init(net);
+
 	// Loops
 	Real taubound = -1, taustar = 0.5/5, taustar0 = 1.0;
 	for(int iteration = 1; !exit_flag; iteration++) {
@@ -403,16 +427,28 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 
 		for(count = 1;; count++) {
 			socp(net, x0, g0, beta, x1);
-			f1 = obj->f(x1);
-			if(f1 < f0) break;
-			//g1 = robj->g(y1);
-			//y1 = obj->reduced_variable(x1);
-			//if(y0.dot(g1) - y1.dot(g1) < 0) break;
+			if(settings.gets("Function")=="bpr"){
+				f1 = obj->f(x1);
+				if(f1 < f0) break;
+			}
+			else{
+				if(check_capacity(net, x1)){
+					y1 = obj->reduced_variable(x1);
+					f1 = robj->f(y1);
+					g1 = robj->g(y1);
+					
+					if(f1 < f0) break;
+					if(y0.dot(g1) - y1.dot(g1) < 0) break;
+				}
+			}
+
 			beta *= settings.getr("beta down factor");
 		}
 
-		y1 = obj->reduced_variable(x1);
-		g1 = robj->g(y1); // g is now gradient at x
+		if(settings.gets("Function")=="bpr"){
+			y1 = obj->reduced_variable(x1);
+			g1 = robj->g(y1);
+		}
 
 		// Optimality check
 		Vector dy(y0); dy -= y1;
@@ -422,7 +458,8 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		Real cosine = 1 + ( (g1dx - beta*g0g1) /
 		                    sqrt((dxdx - 2*beta*g0dx + beta*beta*g0g0)*g1g1) );
 
-		exit_flag = cosine  <= settings.getr("optimality epsilon");     
+		exit_flag = cosine  <= settings.getr("optimality epsilon");   
+  
 		timer->record(); // for timing
 
 		// Line Search
@@ -451,12 +488,13 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 					DA.set_cost ( net.arcs[itg1.index()].head,
 					              net.arcs[itg1.index()].tail,
 					              cost_t(itg1.value()));
-				DA.get_flows(x0, settings.geti("memory parsimony level")>=2);
+				DA.get_flows(x0, settings.geti("memory parsimony level")<=0);
 				y0 = obj->reduced_variable(x0);
 				
 				taustar = section_search(y1, y0, robj, 
 				                         settings.geti("line search iterations"),
 				                         false, tau*(1-PHI), tau*PHI);
+
 				x1 *= (1-taustar); x0 *= taustar; x1 += x0;
 				y1 *= (1-taustar); y0 *= taustar; y1 += y0;
 				if(iter == 0) taustar0 = taustar;
@@ -482,12 +520,13 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		              memory_usage(), x1.nonZeros());
 
 		if(taustar == 0.0) taustar = 1.0; 
-      
 	}
 
 	// Check feasibility of the final solution
 	assert(check_conservation(net,x1));
 	assert(check_nonnegative(x1));
+	if(settings.gets("Function")=="kleinrock")
+	   assert(check_capacity(net, x1));
 
 	// Reporting final results
 	tr.print_line(iteration_report);
@@ -495,166 +534,9 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	iteration_report << "Optimal objective = " 
 	                 << scientific << setprecision(12) << obj->f(x1)
 	                 << endl;
+	release();
 	delete robj;
 	delete timer;
-}
-
-void solve_KL(const MultiCommoNetwork &net){
-	KleinrockFunction *obj = new KleinrockFunction(net);
-	Real beta;
-	int count = 0;
-	Timer* timer = new CPUTimer;
-	bool exit_flag = false;
-	Vector x0(A*K), x1(A*K), sp(A*K);
-	ShortestPathOracle DA(net);
-
-	timer->record();
-
-	// Initialisation by solving the concurrent flow problem
-	x1 = init2(net);
-	release2();
-
-	Real f0, f1 = obj->f(x1); 
-	beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
-  
-	// Timing and Reporting
-	timer->record();
-	iteration_report << "Initialisation: time = " << timer->elapsed()
-	                 << "s; obj = " << f1 
-	                 << endl;
-
-	// format and header of the iteration report
-	TableReport tr("%-4d  %7d     %8.3f   %12.2f"
-	               "%5.3s"
-	               "%8.5f   %8.5f   %8.5f"
-	               "%8.3f %20.10e %20.10e %10.1e  %12.3f %10.2f");
-
-	tr.print_header(&iteration_report,
-	                "Iter", "#solve",  "t_total",   "beta",
-	                "ls?", 
-	                "lambda*", "tau*0",     "tau*n",
-	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed");
-	tr.print_header(&cout,
-	                "Iter", "#solve",  "t_total",   "beta",
-	                "ls?", 
-	                "lambda*", "tau*0",     "tau*n",
-	                "t_SP", "obj_ls",  "obj_final", "cosine", "t_elapsed", "peak_mem");
-
-	Vector g(A*K), z(A*K), y0(A*K);
-	Vector y1(obj->reduced_variable(x1));
-	Function *robj = obj->reduced_function();
-
-	init(net);
-
-	// Loops
-	Real taubound = -1, taustar = 0.5/5, taustar0 = 1.0;
-	for(int iteration = 1; !exit_flag; iteration++) {
-		if(settings.getb("to reset beta")) 
-			beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
-
-		// Timing and Reporting
-		timer->record();
-
-		// Previous best solution
-		x0 = x1; f0 = f1; y0 = y1;
-    
-		// normalized gradient
-		g = obj->g(x0);
-		g *= (1/sqrt(g.dot(g)));
-
-		for(count = 1;;count++) {
-			z = g; z *= (-beta); z += x0;
-			//z = x0 - beta*g;
-			//socp(net, z, x1);
-			if(check_capacity(net, x1)){
-				f1 = obj->f(x1);
-				if(f1 < f0) break;
-				Vector g1(obj->g(x1));
-				if(x0.dot(g1) - x1.dot(g1) < 0) break;
-			}
-			beta *= settings.getr("beta down factor");
-		}
-
-		// Optimality check
-		g = obj->g(x1); // g is now gradient at x1
-		z -= x1; // z is now z - x1
-		Real cosine = 1 + (z.dot(g))/sqrt((z.dot(z))*(g.dot(g)));
-		exit_flag = cosine  <= settings.getr("optimality epsilon"); 
-    
-		timer->record(); // for timing
-
-		y1 = obj->reduced_variable(x1);
-
-		// Line Search
-		Real lambda = 1.0;
-		bool do_line_search = ( settings.getb("to do line search") && 
-		                        g.dot(x0)-g.dot(x1)<0 );
-		if(do_line_search){
-			lambda = section_search (y0, y1, robj, 
-			                         settings.geti("line search iterations"));
-			//x1 = x0 + lambda*(x1-x0);
-			//y1 = y0 + lambda*(y1-y0);
-			x1 -= x0; x1 *= lambda; x1 += x0;
-			y1 -= y0; y1 *= lambda; y1 += y0;
-			f1 = robj->f(y1);
-		}
-    
-		timer->record(); // for timing
-    
-		Real f_ls = f1; // for reporting
-
-		double tau = taustar0*20;
-		updatemin(tau, 1.0);
-		FOR(iter, settings.geti("SP iterations per SOCP")) {
-			Vector gy(robj->g(y1));
-			DA.reset_cost();
-			ITER(gy, itgy)
-				DA.set_cost(net.arcs[itgy.index()].head,
-				            net.arcs[itgy.index()].tail,
-				            cost_t(itgy.value()));
-			DA.get_flows(sp);
-
-			Vector ysp(obj->reduced_variable(sp));
-			taustar = section_search(y1, ysp, robj, 
-			                         settings.geti("line search iterations"),
-			                         false, tau*(1-PHI), tau*PHI);
-
-			//x1 += taustar*(sp-x1);  
-			x1 -= sp;  x1 *= (1-taustar); x1 += sp; 
-			//y1 += taustar*(ysp-y1); 
-			y1 -= ysp; y1 *= (1-taustar); y1 += ysp;
-
-			if(iter == 0) taustar0 = taustar;
-		}
-    
-		f1 = robj->f(y1);
-
-		// Timing and Reporting
-		timer->record();
-		tr.print_row(&iteration_report,
-		             iteration, count, timer->elapsed(-1,-4), beta,
-		             (do_line_search?"YES":"NO"), 
-		             lambda, taustar0, taustar,
-		             timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1));
-		tr.print_row(&cout,
-		             iteration, count, timer->elapsed(-1,-4), beta,
-		             (do_line_search?"YES":"NO"), 
-		             lambda, taustar0, taustar,
-		             timer->elapsed(), f_ls, f1, cosine, timer->elapsed(0,-1), memory_usage());
-		if(taustar == 0.0) taustar = 1.0;     
-	}
-  
-	// check feasibility of the final solution
-	assert(check_conservation(net,x1));
-	assert(check_nonnegative(x1));
-	assert(check_capacity(net,x1));
-
-	// Reporting final results
-	tr.print_line(iteration_report);
-	tr.print_line(cout);
-	iteration_report<<"Optimal objective: "<<scientific<<setprecision(12)<<obj->f(x1)<<endl;
-	delete timer;
-	delete obj;
 }
 
 Vector solve_by_dijkstra(const MultiCommoNetwork &net, Function *obj)
@@ -801,26 +683,15 @@ int main(){
 
 	cout<<"Solving"<<endl;
 	timer->record();
+	
+	ReducableFunction *obj = NULL;
+	if(settings.gets("Function") == "bpr") obj = new BPRFunction(net);
+	else obj = new KleinrockFunction(net);
 
-	if(!settings.getb("to do SOCP")){
-		Function *obj = NULL;
-		if(settings.gets("Function") == "bpr") obj = new BPRFunction(net);
-		else obj = new KleinrockFunction(net);
-		solve_by_dijkstra(net, obj);
-		delete obj;
-	}
-	else
-		if(settings.gets("Function") == "bpr"){
-			init(net);
-			BPRFunction *obj = new BPRFunction(net);
-			solve(net,obj);
-			release();
-			delete obj;
-		}
-		else{
-			solve_KL(net);
-			release();
-		}
+	if(!settings.getb("to do SOCP")) solve_by_dijkstra(net, obj);
+	else solve(net, obj);
+
+	delete obj; obj = NULL;
 
 	timer->record();
 

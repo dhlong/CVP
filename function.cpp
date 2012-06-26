@@ -223,9 +223,13 @@ Real KleinrockFunction::f(Vector &x) const{
 Vector KleinrockFunction::g(Vector &x) const{
 	int K = net.commoflows.size(), A = net.arcs.size();
 	assert(K*A == x.size()); // debug
+
+	cout<<"Mark KL::g:1"<<endl;
 	Vector d(K*A);
+	cout<<"Mark KL::g:2"<<endl;
 	Real ya, ca, dd;
 	Vector::iterator itx = x.get_iterator();
+	cout<<"Mark KL::g:3"<<endl;
 	while(!itx.end()){
 		int a = itx.index() / K;
 		ca = net.arcs[a].cap;
@@ -234,8 +238,9 @@ Vector KleinrockFunction::g(Vector &x) const{
 		dd = ca - ya;
 		if(dd > 0) dd = ca/(dd*dd);
 		else dd = INFINITY;
-		FOR(k,K) d.insert(a*K + k) = dd;
+		FOR(k, K) d.insert(a*K + k) = dd;
 	}
+	cout<<"Mark KL::g:4"<<endl;
 	return d;
 }
 
@@ -295,19 +300,22 @@ Real ReducedKleinrockFunction::f(Vector &x) const {
 }
 
 Vector ReducedKleinrockFunction::g(Vector &x) const{
-	int A = net.arcs.size();
+	int A = net.arcs.size(), preva = 0;
 	assert(A == x.size()); // debug
 	Vector d(A);
 	Real ya, ca, dd;
 	ITER(x, itx){
 		int a = itx.index();
+		for(int aa = preva; aa < a; aa++) d.insert(aa) = 1.0/net.arcs[aa].cap;
 		ya = itx.value(); ca = net.arcs[a].cap;
 		//assert(ca-ya>0);
 		dd = ca - ya;
 		if(dd>0) dd = ca/(dd*dd);
 		else dd = INFINITY;
 		d.insert(a) = dd;
+		preva = a+1;
 	}
+	for(int aa = preva; aa < A; aa++) d.insert(aa) = 1.0/net.arcs[aa].cap;
 	return d;
 }
 
@@ -319,12 +327,12 @@ Vector ReducedKleinrockFunction::gg(Vector &x) const{
 	ITER(x, itx){
 		int a = itx.index();
 		ya = itx.value(); ca = net.arcs[a].cap;
-		//assert(ca-ya>0);
 		dd = ca - ya;
 		if(dd>0) dd = 2*ca/(dd*dd*dd);
 		else dd = INFINITY;
 		d.insert(a) = dd;
 	}
+
 	return d;
 }
 
