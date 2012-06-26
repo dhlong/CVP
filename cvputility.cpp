@@ -148,8 +148,10 @@ double& SettingMapper::getr(const string &key){
 
 string& SettingMapper::gets(const string &key){
 	string skey = tolower_str(trim(key));
+	cout<<skey<<endl;
 	if(str_params.find(skey) == str_params.end())
 		error_handle("Setting '"+key+"' of type string has not been set.");
+	cout<<str_params[skey]<<endl;
 	return str_params[skey];
 }
 
