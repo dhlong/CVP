@@ -24,6 +24,9 @@
 #define EIGEN_YES_I_KNOW_SPARSE_MODULE_IS_NOT_STABLE_YET
 
 #include <Eigen/Sparse>
+#include <Eigen/Dense>
+
+using Eigen::MatrixXd;
 
 #define FOR(i,n) for(int i=0, n_=(n); i<n_; i++)
 #define MALLOC(type, size) (type*) malloc((size)*sizeof(type))
@@ -43,6 +46,10 @@ typedef double Real;
 //typedef vector<Real> Vector;
 typedef MySparseVector Vector;
 typedef int Vertex;
+
+// inline function
+template <typename T> inline T sqr(T a) { return a*a; }
+template <typename T> inline T cub(T a) { return a*a*a; }
 
 // report error message and terminate the program 
 void error_handle(const string &);

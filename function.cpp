@@ -4,161 +4,67 @@
 #define INFINITY 1e200
 #endif
 
-QuarticFunction::QuarticFunction(const Network &n) : 
-	net(n), to(n.getNVertex()) {
-	FOR(i,n.arcs.size()) to[net.arcs[i].head].push_back(i);
+
+/*****************************************************************
+ * Delay Function definition
+ *
+ ****************************************************************/
+DelayFunction::DelayFunction(const MultiCommoNetwork &n, 
+                             Real a, Real b, Real g, Real l) :
+	net(n), bpr(n,a,b), gamma(g), lambda(l)
+{
 }
 
-Real QuarticFunction::f(Vector &v) const{
-	Real sum = 0.0, x, c;
-	int arc;
+Real DelayFunction::f(Vector &x) const{
+	int V = net.getNVertex();
+	vector<Real> sumnode(V, 0.0);
+	Real sum = 0.0;
   
-	assert(v.size()==net.arcs.size());
+	ITER(x, itx)
+		sumnode[net.arcs[itx.index()].head] += itx.value()/net.arcs[itx.index()].cap;
 
-	FOR(i, v.size()){
-		FOR(j, to[net.arcs[i].tail].size()){
-			arc = to[net.arcs[i].tail][j];
-			x = (v.coeff(arc)/net.arcs[arc].cap);
-			sum += 20*x*x*x*x;
-		}
-		x = (v.coeff(i)/net.arcs[i].cap);
-		sum += 100*x*x;
-    
-		c = Real(net.arcs[i].head+1.0)/Real(net.arcs[i].tail+1.0);
-		sum += c*v.coeff(i);
-	}
-	return sum;
+	FOR(v, V) sum += pow(sumnode[v], lambda);
+	return bpr.f(x) + gamma*sum;
 }
 
-Vector QuarticFunction::g(Vector &v) const{
-	Vector d(v.size());
-	Real x, c, sum;
-	int a;
+Vector DelayFunction::g(Vector &x) const {
+	int V = net.getNVertex();
+	vector<Real> sumnode(V, 0.0);
+  
+	ITER(x, itx)
+		sumnode[net.arcs[itx.index()].head] += itx.value()/net.arcs[itx.index()].cap;
 
-	FOR(i, v.size()) {
-		sum = 0;
-		FOR(j, to[net.arcs[i].tail].size()){
-			a = to[net.arcs[i].tail][j];
-			x = v.coeff(a); c = net.arcs[a].cap;
-			d.coeffRef(a) += 80*x*x*x/(c*c*c*c);
-		}
+	Vector d = bpr.g(x);
+	ITER(d, itd) 
+		itd.value()+= gamma*lambda*pow(sumnode[net.arcs[itd.index()].head], lambda-1);
 
-		x = v.coeff(i); c = net.arcs[i].cap;
-		d.coeffRef(i) += 200*x/(c*c);
-
-		c = Real(net.arcs[i].head+1.0)/Real(net.arcs[i].tail+1.0);
-		d.coeffRef(i) += c;
-	}
 	return d;
 }
 
-//!!!! have not debugged
-// do not use yet
-Vector QuarticFunction::gg(Vector &v) const{
-	Vector d(v.size());
-	Real x, c, sum;
-	int a;
+Vector DelayFunction::gg(Vector &x) const{
+	int V = net.getNVertex();
+	vector<Real> sumnode(V, 0.0);
+  
+	ITER(x, itx)
+		sumnode[net.arcs[itx.index()].head] += itx.value()/net.arcs[itx.index()].cap;
 
-	FOR(i, v.size()) {
-		sum = 0;
-		FOR(j, to[net.arcs[i].tail].size()){
-			a = to[net.arcs[i].tail][j];
-			x = v.coeff(a); c = net.arcs[a].cap;
-			d.coeffRef(a) += 240*x*x/(c*c*c*c);
-		}
+	Vector d = bpr.gg(x);
+	ITER(d, itd) 
+		itd.value() += ( gamma * lambda * (lambda-1) *
+		                 pow(sumnode[net.arcs[itd.index()].head], lambda-2) );
 
-		x = v.coeff(i); c = net.arcs[i].cap;
-		d.coeffRef(i) += 200/(c*c);
-
-		c = Real(net.arcs[i].head+1.0)/Real(net.arcs[i].tail+1.0);
-		d.coeffRef(i) += c;
-	}
 	return d;
 }
+
+/*****************************************************************
+ * BPR Function definition
+ *
+ ****************************************************************/
 
 BPRFunction::BPRFunction(const MultiCommoNetwork &n, Real a, Real b): 
 	net(n), alpha(a), beta(b) {}
 
 Real BPRFunction::f(Vector &x) const {
-	int K = net.commoflows.size(), A = net.arcs.size();
-	assert(K*A == x.size()); // debug
-	Real sum = 0.0, ya, ca, ta;
-	Vector::iterator itx = x.get_iterator();
-	while(!itx.end()){
-		int a = itx.index() / K;
-		ca = net.arcs[a].cap;
-		ta = net.arcs[a].cost;
-		ya = 0.0;
-		do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
-		sum += ta*ya*(1 + alpha/(beta+1)*pow(ya/ca,beta));
-	}
-	return sum;
-}
-
-Function* BPRFunction::reduced_function() const {
-	return new ReducedBPRFunction(net);
-}
-
-Vector BPRFunction::reduced_variable(Vector &x) const {
-	int K = net.commoflows.size(), A = net.arcs.size();
-	assert(K*A == x.size());
-	Vector y(A);
-	Vector::iterator itx = x.get_iterator();
-	while(!itx.end()){
-		int a = itx.index()/K;
-		Real ya = 0.0;
-		do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
-		y.insert(a) = ya;
-	}
-	return y;
-}
-
-Vector BPRFunction::g(Vector &x) const {
-	int K = net.commoflows.size(), A = net.arcs.size();
-	assert(K*A == x.size()); // debug
-	Vector d(K*A);
-	Real ya, ca, dd, ta;
-	Vector::iterator itx = x.get_iterator();
-
-	while(!itx.end()){
-		int a = itx.index() / K;
-		ca = net.arcs[a].cap;
-		ta = net.arcs[a].cost;
-		ya = 0.0;
-		do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
-		dd = ta + ta*alpha*pow(ya/ca,beta);
-		FOR(k, K) d.insert(a*K+k) = dd;
-
-		int na = itx.end()? A : itx.index()/K;
-		for(int aa = a+1; aa < na; aa++) 
-			FOR(k, K)
-				d.insert(aa*K+k) = net.arcs[aa].cost;		                                                         
-	}
-	return d;
-}
-
-Vector BPRFunction::gg(Vector &x) const {
-	int K = net.commoflows.size(), A = net.arcs.size();
-	assert(K*A == x.size()); // debug
-	Vector d(K*A);
-	Real ya, ca, dd, ta;
-	Vector::iterator itx = x.get_iterator();
-	while(!itx.end()){
-		int a = itx.index() / K;
-		ca = net.arcs[a].cap;
-		ta = net.arcs[a].cost;
-		ya = 0.0;
-		do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
-		dd = ta*alpha*beta*pow(ya/ca,beta-1)/ca;
-		if(fabs(dd)>1e-7) FOR(k, K) d.insert(a*K+k) = dd;
-	}
-	return d;
-}
-
-ReducedBPRFunction::ReducedBPRFunction(const MultiCommoNetwork &n, Real a, Real b): 
-	net(n), alpha(a), beta(b) {}
-
-Real ReducedBPRFunction::f(Vector &x) const {
 	int A = net.arcs.size();
 	assert(A == x.size()); // debug
 	Real sum = 0.0, ya, ca, ta;
@@ -172,7 +78,7 @@ Real ReducedBPRFunction::f(Vector &x) const {
 	return sum;
 }
 
-Vector ReducedBPRFunction::g(Vector &x) const {
+Vector BPRFunction::g(Vector &x) const {
 	int A = net.arcs.size(), a = 0, pa = 0;
 	assert(A == x.size()); // debug
 	Vector d(A);
@@ -190,7 +96,7 @@ Vector ReducedBPRFunction::g(Vector &x) const {
 	return d;
 }
 
-Vector ReducedBPRFunction::gg(Vector &x) const {
+Vector BPRFunction::gg(Vector &x) const {
 	int A = net.arcs.size();
 	assert(A == x.size()); // debug
 	Vector d(A);
@@ -204,88 +110,12 @@ Vector ReducedBPRFunction::gg(Vector &x) const {
 	return d;
 }
 
-Real KleinrockFunction::f(Vector &x) const{
-	int K = net.commoflows.size(), A = net.arcs.size();
-	assert(K*A == x.size()); // debug
-	Real sum = 0.0, ya, ca;
-	Vector::iterator itx = x.get_iterator();
-	while(!itx.end()){
-		int a = itx.index() / K;
-		ca = net.arcs[a].cap;
-		ya = 0.0;
-		do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
-		if(ca>ya) sum += ya/(ca-ya);
-		else return INFINITY;
-	}
-	return sum;
-}
+/*****************************************************************
+ * Kleinrock Function definition
+ *
+ ****************************************************************/
 
-Vector KleinrockFunction::g(Vector &x) const{
-	int K = net.commoflows.size(), A = net.arcs.size();
-	assert(K*A == x.size()); // debug
-
-	cout<<"Mark KL::g:1"<<endl;
-	Vector d(K*A);
-	cout<<"Mark KL::g:2"<<endl;
-	Real ya, ca, dd;
-	Vector::iterator itx = x.get_iterator();
-	cout<<"Mark KL::g:3"<<endl;
-	while(!itx.end()){
-		int a = itx.index() / K;
-		ca = net.arcs[a].cap;
-		ya = 0.0;
-		do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
-		dd = ca - ya;
-		if(dd > 0) dd = ca/(dd*dd);
-		else dd = INFINITY;
-		FOR(k, K) d.insert(a*K + k) = dd;
-	}
-	cout<<"Mark KL::g:4"<<endl;
-	return d;
-}
-
-Function* KleinrockFunction::reduced_function() const {
-	return new ReducedKleinrockFunction(net);
-}
-
-Vector KleinrockFunction::reduced_variable(Vector &x) const {
-	int K = net.commoflows.size(), A = net.arcs.size();
-	assert(K*A == x.size());
-	Vector y (A);
-	Vector::iterator itx = x.get_iterator();
-	while(!itx.end()){
-		int a = itx.index()/K;
-		Real ya = 0.0;
-		do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K == a);
-		y.insert(a) = ya;
-	}
-	return y;
-}
-
-Vector KleinrockFunction::gg(Vector &x) const{
-	int K = net.commoflows.size(), A = net.arcs.size();
-	assert(K*A == x.size()); // debug
-	Vector d(K*A);
-	Real ya, ca, dd;
-	Vector::iterator itx = x.get_iterator();
-	while(!itx.end()){
-		int a = itx.index()/K;
-		ya = 0.0; ca = net.arcs[a].cap;
-		do ya += itx.value(), ++itx; while(!itx.end() && itx.index()/K==a);
-		dd = ca - ya;
-		//assert(ca-ya>0);
-		if(ca-ya>0) dd = 2*ca/(dd*dd*dd);
-		else dd = INFINITY;
-		FOR(k,K) d.insert(a*K + k) = dd;
-	}
-	return d;
-}
-
-KleinrockFunction::KleinrockFunction(const MultiCommoNetwork &n) : net(n){
-}
-
-
-Real ReducedKleinrockFunction::f(Vector &x) const {
+Real KleinrockFunction::f(Vector &x) const {
 	int A = net.arcs.size();
 	assert(A == x.size()); // debug
 	Real sum = 0.0, ya, ca;
@@ -299,7 +129,7 @@ Real ReducedKleinrockFunction::f(Vector &x) const {
 	return sum;
 }
 
-Vector ReducedKleinrockFunction::g(Vector &x) const{
+Vector KleinrockFunction::g(Vector &x) const{
 	int A = net.arcs.size(), preva = 0;
 	assert(A == x.size()); // debug
 	Vector d(A);
@@ -319,7 +149,7 @@ Vector ReducedKleinrockFunction::g(Vector &x) const{
 	return d;
 }
 
-Vector ReducedKleinrockFunction::gg(Vector &x) const{
+Vector KleinrockFunction::gg(Vector &x) const{
 	int A = net.arcs.size();
 	assert(A == x.size()); // debug
 	Vector d(A);
@@ -336,8 +166,100 @@ Vector ReducedKleinrockFunction::gg(Vector &x) const{
 	return d;
 }
 
-ReducedKleinrockFunction::ReducedKleinrockFunction(const MultiCommoNetwork &n) : net(n){
+KleinrockFunction::KleinrockFunction(const MultiCommoNetwork &n) : net(n){
 }
+
+/*****************************************************************
+ * ReducableFunction
+ *
+ ****************************************************************/
+
+Vector compressed_vector(Vector &x, int K){
+	assert(x.size() % K == 0);
+	Vector y(x.size()/K);
+	Vector::iterator itx = x.get_iterator();
+	while(!itx.end()){
+		int a = itx.index()/K;
+		Real ya = 0.0;
+		while(!itx.end() && itx.index()/K == a) ya += itx.value(), ++itx;
+		if(fabs(ya) > 1e-10) y.insert(a) = ya;
+	}
+	return y;
+}
+
+template <class F>
+MCFReducableFunction<F>::MCFReducableFunction(const MultiCommoNetwork &n,
+                                              const F &f) :
+	net(n), func(f)
+{
+}
+
+template <class F>
+Function* MCFReducableFunction<F>::reduced_function() const{
+	return dynamic_cast<Function*>(new F(func));
+}
+
+template <class F>
+Vector MCFReducableFunction<F>::reduced_variable(Vector &x) const{
+	assert(x.size() == net.arcs.size() * net.commoflows.size());
+	return compressed_vector(x, net.commoflows.size());
+}
+
+template <class F>
+Real MCFReducableFunction<F>::f(Vector &x) const{
+	Vector y = this->reduced_variable(x);
+	return func.f(y);
+}
+
+template <class F>
+Vector MCFReducableFunction<F>::g(Vector &x) const{
+	int A = net.arcs.size(), K = net.commoflows.size();
+	Vector y = this->reduced_variable(x);
+	Vector dy = func.g(y);
+	Vector dx(A*K);
+	ITER(dy, itdy) FOR(k, K)
+		dx.insert(itdy.index()*K + k) = itdy.value();
+	return dx;
+}
+
+template <class F>
+Vector MCFReducableFunction<F>::gg(Vector &x) const {
+	int A = net.arcs.size(), K = net.commoflows.size();
+	Vector y = this->reduced_variable(x);
+	Vector dy = func.gg(y);
+	Vector dx(A*K);
+	ITER(dy, itdy) FOR(k, K)
+		dx.insert(itdy.index()*K + k) = itdy.value();
+	return dx;
+}
+
+/*****************************************************************
+ * Some ReducableFunctions that are based on DelayFunction,
+ * BPRFunction, KleinrockFunction
+ *
+ ****************************************************************/
+
+MCFDelayFunction::MCFDelayFunction(const MultiCommoNetwork &n, 
+                                   Real a, Real b, Real g, Real l) : 
+	MCFReducableFunction<DelayFunction>(n, DelayFunction(n,a,b,g,l))
+{
+}
+
+MCFBPRFunction::MCFBPRFunction(const MultiCommoNetwork &n, 
+                               Real a, Real b) :
+	MCFReducableFunction<BPRFunction>(n, BPRFunction(n,a,b))
+{
+}
+
+MCFKleinrockFunction::MCFKleinrockFunction(const MultiCommoNetwork &n) :
+	MCFReducableFunction<KleinrockFunction>(n, KleinrockFunction(n))
+{
+}
+
+/*****************************************************************
+ * Section search & golden section search
+ *
+ ****************************************************************/
 
 
 #define PHI 0.6180339887498948482045868343656

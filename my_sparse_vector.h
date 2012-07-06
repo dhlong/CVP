@@ -10,14 +10,14 @@
 using namespace std;
 
 class MySparseVector{
- private:
-  list< pair<int, double> > val;
-  bool sorted;
+private:
+	list< pair<int, double> > val;
+	bool sorted;
 	int size_;
-
-  void sort();
-
- public:
+	
+	void sort();
+	
+public:
 	typedef pair<int, double> IVPair;
 	typedef list<IVPair> IVPairL;
 	class iterator : public IVPairL::iterator {
@@ -26,7 +26,7 @@ class MySparseVector{
 		iterator(MySparseVector *v_): v(v_), IVPairL::iterator(v_->val.begin()){}
 		inline bool end(){ return (*this) == v->val.end();}
 		inline int index(){ return (*this)->first; }
-		inline double value(){ return (*this)->second; }
+		inline double& value(){ return (*this)->second; }
 	};
 	
 	iterator get_iterator();

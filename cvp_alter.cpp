@@ -20,6 +20,7 @@ Solver *solver = NULL;
 
 CPXENVptr env = NULL;
 CPXLPptr lp = NULL;
+MatrixXd Lambda;
 
 int numcols, numrows, numnz, numqnz;
 
@@ -236,6 +237,66 @@ void socp(const MultiCommoNetwork &net, Vector &x0, Vector &g, Real beta, Vector
 	FREE(collist);
 }
 
+void Lambda_matrix(const MultiCommoNetwork &net){
+	MatrixXd N = MatrixXd::Zero(V, A);
+	FOR(a, A){
+		N(net.arcs[a].head, a) = 1.0;
+		N(net.arcs[a].tail, a) = -1.0;
+	}
+	MatrixXd NT = N.transpose();
+	MatrixXd M = N*NT;
+	
+	Lambda = NT * M.inverse() * N;
+}
+
+void projection(const MultiCommoNetwork &net, Vector &x0, double beta, Vector &g, Vector &x1){
+	vector<Real> netflows(V);
+	MatrixXd X0 = MatrixXd::Zero(A, K);
+	MatrixXd X = MatrixXd::Zero(A, K);
+	ITER(x0, itx){
+		int a = itx.index()/K, k = itx.index()%K;
+		X(a, k) = X0(a, k) = itx.value();
+	}
+
+	ITER(g, itg){
+		int a = itg.index();
+		Real val = itg.value()*beta;
+		FOR(k, K) X(a, k) -= val;
+	}
+
+	for(int count=0;;count++){
+		MatrixXd X1 = X + Lambda*(X0-X);
+		FOR(a, A) FOR(k, K) if(X(a, k) <0) X(a, k) = 9e-10;
+
+		double sum1 = 0.0, sum = 0.0;
+		FOR(k, K){
+			FOR(v, V) netflows[v] = 0.0;
+			FOR(a, A){
+				if(X1(a,k) < 0) sum1 += fabs(X1(a,k));
+				netflows[net.arcs[a].head] -= X(a,k);
+				netflows[net.arcs[a].tail] += X(a,k);
+			}
+
+			FOR(v, V) 
+				if(v == net.commoflows[k].origin) 
+					sum += fabs(netflows[v] + net.commoflows[k].demand);
+				else if(v == net.commoflows[k].destination)
+					sum += fabs(netflows[v] - net.commoflows[k].demand);
+				else
+					sum += fabs(netflows[v]);
+		}
+
+		if(sum < 1e-9) break;
+		if(sum1 < 1e-9) { X = X1; break; }
+		//cout<<"GP iter "<<count<<" deviation = "<<sum<<endl;
+		X += X1;
+		X *= 0.5;
+	}
+
+	x1 *= 0.0;
+	FOR(a, A) FOR(k, K) if(X(a,k) > 1.0e-10) x1.insert(a*K + k) = X(a,k);
+}
+
 void allocate2() {
 	probname = (char   *) malloc (90      * sizeof(char));   
 	obj      = (double *) malloc (numcols * sizeof(double));
@@ -291,18 +352,6 @@ Vector init2(const MultiCommoNetwork &net){
 		matval[3*i + 2*k]     = net.commoflows[k].demand,
 		matval[3*i + 2*k + 1] = -net.commoflows[k].demand;
 
-	/*
-	assert((env = CPXopenCPLEX (&status)) != NULL);
-	assert((lp  = CPXcreateprob (env, &status, probname)) != NULL);
-    
-	assert(!CPXsetintparam (env, CPX_PARAM_SCRIND, CPX_ON));
-	assert(!CPXsetintparam (env, CPX_PARAM_THREADS, 1));
-
-	assert(!CPXcopylp (env, lp, numcols, numrows, CPX_MAX, obj, rhs, 
-	                   sense, matbeg, matcnt, matind, matval,
-	                   lb, ub, NULL));
-	*/
-
 	solver = new CPXSolver;
 	solver->copylp(numcols, numrows, CPX_MAX, obj, rhs, 
 	               sense, matbeg, matcnt, matind, matval,
@@ -324,16 +373,6 @@ Vector init2(const MultiCommoNetwork &net){
 	double* p = (double *) malloc(A*K*sizeof(double ));
 	double lambda = 1.0;
 
-	//assert(!CPXbaropt (env, lp));  
-	//CPXwriteprob(env, lp, "concur.rlp", NULL);
-	//int statind = CPXgetstat (env, lp);
-	//char buffer[100];
-	//char* ptr = CPXgetstatstring (env, statind, buffer);
-	//cout<<ptr<<endl;
-
-	//assert(!CPXgetx(env, lp, p, 0, A*K-1));
-	//assert(!CPXgetx(env, lp, &lambda, A*K, A*K));
-
 	solver->getx(p, 0, A*K-1);
 	solver->getx(&lambda, A*K, A*K);
 	assert(lambda >= 1.0);
@@ -345,9 +384,6 @@ Vector init2(const MultiCommoNetwork &net){
 	FOR(i, A*K) if(p[i] > 1e-8) x0.insert(i) = p[i]/lambda;
 	FREE(p);
 	return x0;
-}
-
-void release2(){
 }
 
 void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
@@ -365,7 +401,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	timer->record();
 
 	// Initialisation by solving the intial network shortest paths
-	if(settings.gets("Function")=="bpr") {
+	if(settings.gets("Function")!="kleinrock") {
 		FOR(a, A)
 			DA.set_cost(net.arcs[a].head, 
 			            net.arcs[a].tail, 
@@ -373,10 +409,8 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	
 		DA.get_flows(x1, settings.geti("memory parsimony level")<=0);
 	}
-	else{
+	else
 		x1 = init2(net);
-		release2();
-	}
 
 	Real f0, f1 = obj->f(x1); 
 	beta = settings.getr("initial beta") * sqrt(x1.dot(x1));
@@ -409,6 +443,8 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 	Function *robj = obj->reduced_function();	
 
 	init(net);
+	//MatrixXd Lambda;
+	//Lambda_matrix(net);
 
 	// Loops
 	Real taubound = -1, taustar = 0.5/5, taustar0 = 1.0;
@@ -421,34 +457,27 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 		// Previous best solution
 		x0 = x1; f0 = f1; y0 = y1;
     
-		// normalized gradient
+		// Normalized gradient
 		g0 = robj->g(y0);
 		g0 *= (1/sqrt(g0.squaredNorm()*K));
 
+		// Gradient Projection
 		for(count = 1;; count++) {
 			socp(net, x0, g0, beta, x1);
-			if(settings.gets("Function")=="bpr"){
-				f1 = obj->f(x1);
-				if(f1 < f0) break;
-			}
-			else{
-				if(check_capacity(net, x1)){
-					y1 = obj->reduced_variable(x1);
-					f1 = robj->f(y1);
-					g1 = robj->g(y1);
-					
-					if(f1 < f0) break;
-					if(y0.dot(g1) - y1.dot(g1) < 0) break;
-				}
-			}
+			//projection(net, x0, beta, g0, x1);
+			y1 = obj->reduced_variable(x1);
+			f1 = robj->f(y1);
+			g1 = robj->g(y1);
+
+			if(settings.gets("Function")!="kleinrock")
+				if(f1 < f0) break; else;
+			else
+				if(check_capacity(net, x1))
+					if(f1 < f0 || y0.dot(g1) < y1.dot(g1)) break;
 
 			beta *= settings.getr("beta down factor");
 		}
 
-		if(settings.gets("Function")=="bpr"){
-			y1 = obj->reduced_variable(x1);
-			g1 = robj->g(y1);
-		}
 
 		// Optimality check
 		Vector dy(y0); dy -= y1;
@@ -541,6 +570,7 @@ void solve(const MultiCommoNetwork &net, ReducableFunction *obj){
 
 Vector solve_by_dijkstra(const MultiCommoNetwork &net, Function *obj)
 {
+	cout<<"Solve by dijkstra"<<endl;
 	int V = net.getNVertex(), A = net.arcs.size(), K = net.commoflows.size();
 	ShortestPathOracle DA(net);
 	Timer *timer = new CPUTimer();
@@ -555,18 +585,29 @@ Vector solve_by_dijkstra(const MultiCommoNetwork &net, Function *obj)
 		            cost_t(net.arcs[a].cost));
 	DA.get_flows(x);
 
+	cout<<"Mark solve_by_dijkstra:1"<<endl;
+
 	// header row of the iteration report
 	TableReport tr("%-5d%8.4f%8.4f%8.4f%8.4f%20.10e%12.3f");
 	tr.print_header(&iteration_report, 
 	                "Iter", "t_total", "t_SP", "t_LS", 
 	                "tau", "obj", "t_elapsed");
   
+	cout<<"Mark solve_by_dijkstra:2"<<endl;
+
 	// If obj is reducable, a more efficient algorithm is used
 	ReducableFunction *cobj = dynamic_cast<ReducableFunction*>(obj);
+	cout<<"Mark solve_by_dijkstra:3"<<endl;
+
 	Function * robj = NULL;
+	cout<<"Mark solve_by_dijkstra:4"<<endl;
+
 	Vector y(A);
 	Real tau = 1.0;
-	if(cobj) robj = cobj->reduced_function(), y = cobj->reduced_variable(x);
+	if(cobj) robj = cobj->reduced_function();
+	cout<<"Mark solve_by_dijkstra:5"<<endl;
+	if(cobj) y = cobj->reduced_variable(x);
+	cout<<"Mark solve_by_dijkstra:6"<<endl;
 
 	FOR(iteration, settings.geti("SP iterations")) {
 		cout<<"Iteration "<<iteration<<endl;
@@ -590,7 +631,8 @@ Vector solve_by_dijkstra(const MultiCommoNetwork &net, Function *obj)
 			x *= (1-tau);  sp *= tau; x += sp;
 			y *= (1-tau); ysp *= tau; y += ysp;
 		}
-		else{
+
+		else {
 			Vector g(obj->g(x));
 			FOR(a, A) 
 				DA.set_cost(net.arcs[a].head, 
@@ -627,7 +669,6 @@ Vector solve_by_dijkstra(const MultiCommoNetwork &net, Function *obj)
 
 
 int main(){
-	cout<<"&1: Mem peak"<<memory_usage()<<endl;
 	Timer *timer = new CPUTimer;
   
 	// get the system date and time
@@ -647,8 +688,6 @@ int main(){
 
 	// start the timer
 	timer->record();
-	cout<<"&2: Mem peak"<<memory_usage()<<endl;
-
 
 	// Reading settings from file "CVP.ini"
 	string ininame = "CVP.ini";
@@ -679,19 +718,21 @@ int main(){
 	if (strstr(inputname.c_str(),"grid")   != NULL) format = GENFLOT;
 	if (strstr(inputname.c_str(),"planar") != NULL) format = GENFLOT;
   
-	MultiCommoNetwork net(inputname.c_str(), format);
-
-	cout<<"Solving"<<endl;
-	timer->record();
-	
+	MultiCommoNetwork net(inputname.c_str(), format);	
 	ReducableFunction *obj = NULL;
-	if(settings.gets("Function") == "bpr") obj = new BPRFunction(net);
-	else obj = new KleinrockFunction(net);
+	if (settings.gets("Function") == "bpr") 
+		obj = new MCFBPRFunction(net);
+	else if(settings.gets("Function") == "kleinrock")
+		obj = new MCFKleinrockFunction(net);
+	else
+		obj = new MCFDelayFunction(net, 0.15, 4, 
+		                           settings.getr("nonseparable cost coeff"),
+		                           settings.getr("nonseparable cost power"));
+
+	cout<<"Solving"<<endl; timer->record();
 
 	if(!settings.getb("to do SOCP")) solve_by_dijkstra(net, obj);
 	else solve(net, obj);
-
-	delete obj; obj = NULL;
 
 	timer->record();
 
@@ -707,7 +748,8 @@ int main(){
 	iteration_report.close();
 	solve_report.close();
 
-	delete timer;
+	delete timer; timer = NULL;
+	delete obj; obj = NULL;
 	return 0;
 }
 
